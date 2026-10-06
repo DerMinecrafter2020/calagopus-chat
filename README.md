@@ -28,7 +28,7 @@ cd ..
 cargo build --profile heavy-release
 ```
 
-The extension targets Calagopus Panel `>=1.2.5`. Its frontend uses the official global page slot, frontend API helpers, and extension configuration page; the backend uses Rust routes, extension settings, permissions, and SQL migrations.
+The extension targets Calagopus Panel `>=1.2.3`. Its frontend uses the official global page slot, frontend API helpers, and extension configuration page; the backend uses Rust routes, extension settings, permissions, and SQL migrations. The extension API and required dependencies are available in the official 1.2.3 release.
 
 ## GitHub releases
 
