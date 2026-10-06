@@ -14,6 +14,7 @@ mod get {
     #[derive(ToSchema, Serialize)]
     struct SettingsResponse {
         ai_enabled: bool,
+        ai_provider: String,
         ai_base_url: String,
         ai_model: String,
         ai_system_prompt: String,
@@ -40,6 +41,7 @@ mod get {
         ApiResponse::new_serialized(Response {
             settings: SettingsResponse {
                 ai_enabled: settings.ai_enabled,
+                ai_provider: settings.ai_provider.to_string(),
                 ai_base_url: settings.ai_base_url.to_string(),
                 ai_model: settings.ai_model.to_string(),
                 ai_system_prompt: settings.ai_system_prompt.to_string(),
@@ -57,6 +59,7 @@ mod put {
     #[derive(ToSchema, Deserialize)]
     pub struct PayloadData {
         ai_enabled: bool,
+        ai_provider: String,
         ai_base_url: String,
         ai_model: String,
         ai_system_prompt: String,
@@ -93,8 +96,13 @@ mod put {
         let ai_model = data.ai_model.trim();
         let ai_system_prompt = data.ai_system_prompt.trim();
         let api_key = data.ai_api_key.as_deref().unwrap_or_default().trim();
+        let ai_provider = data.ai_provider.trim();
 
-        if ai_base_url.len() > 512
+        if !matches!(
+            ai_provider,
+            "openai_compatible" | "openrouter" | "anthropic" | "google_gemini" | "ollama"
+        )
+            || ai_base_url.len() > 512
             || ai_model.is_empty()
             || ai_model.len() > 128
             || ai_system_prompt.is_empty()
@@ -112,6 +120,7 @@ mod put {
                 settings.find_mut_extension_settings()?;
 
             extension_settings.ai_enabled = data.ai_enabled;
+            extension_settings.ai_provider = ai_provider.into();
             extension_settings.ai_base_url = ai_base_url.into();
             extension_settings.ai_model = ai_model.into();
             extension_settings.ai_system_prompt = ai_system_prompt.into();
@@ -131,6 +140,7 @@ mod put {
                 serde_json::json!({
                     "extension": "com.calagopus.chat",
                     "ai_enabled": data.ai_enabled,
+                    "ai_provider": ai_provider,
                     "api_key_updated": api_key_updated,
                 }),
             )

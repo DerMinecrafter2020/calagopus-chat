@@ -10,6 +10,7 @@ import {
   Loader,
   Paper,
   PasswordInput,
+  Select,
   Stack,
   Switch,
   Text,
@@ -23,8 +24,42 @@ import getAdminSettings from './api/getAdminSettings.ts';
 import updateAdminSettings from './api/updateAdminSettings.ts';
 import {
   updateAdminSettingsSchema,
+  type AiProvider,
   type UpdateAdminSettings,
 } from './lib/schemas.ts';
+
+const providerPresets: Record<AiProvider, { label: string; baseUrl: string; model: string; description: string }> = {
+  openai_compatible: {
+    label: 'OpenAI-compatible (OpenAI, Groq, DeepSeek, Mistral, Together, etc.)',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+    description: 'Use a Chat Completions-compatible endpoint and set its base URL below.',
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'openai/gpt-4o-mini',
+    description: 'Use an OpenRouter model id, for example openai/gpt-4o-mini.',
+  },
+  anthropic: {
+    label: 'Anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-3-5-haiku-latest',
+    description: 'Uses Anthropic Messages API. Set a Claude model id below.',
+  },
+  google_gemini: {
+    label: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-2.5-flash',
+    description: 'Uses the Gemini generateContent API. Set a Gemini model id below.',
+  },
+  ollama: {
+    label: 'Ollama (local)',
+    baseUrl: 'http://localhost:11434/v1',
+    model: 'llama3.2',
+    description: 'Uses Ollama’s OpenAI-compatible endpoint. An API key is optional.',
+  },
+};
 
 export default function ConfigurationPage() {
   const { addToast } = useToast();
@@ -35,6 +70,7 @@ export default function ConfigurationPage() {
   const form = useForm<UpdateAdminSettings>({
     initialValues: {
       aiEnabled: false,
+      aiProvider: 'openai_compatible',
       aiBaseUrl: 'https://api.openai.com/v1',
       aiModel: 'gpt-4o-mini',
       aiSystemPrompt: 'You are the Calagopus Chat assistant. Be helpful, clear, and concise.',
@@ -52,6 +88,7 @@ export default function ConfigurationPage() {
         if (!active) return;
         form.setValues({
           aiEnabled: settings.aiEnabled,
+          aiProvider: settings.aiProvider,
           aiBaseUrl: settings.aiBaseUrl,
           aiModel: settings.aiModel,
           aiSystemPrompt: settings.aiSystemPrompt,
@@ -106,8 +143,8 @@ export default function ConfigurationPage() {
             <div>
               <Text fw={700}>AI assistant</Text>
               <Text size='sm' c='dimmed'>
-                Configure an OpenAI-compatible chat-completions endpoint. AI chat stays unavailable
-                until it is enabled and a provider key is saved.
+                Choose a provider, model, and credentials. AI chat stays unavailable until enabled
+                and the selected provider is configured.
               </Text>
             </div>
           </Group>
@@ -120,17 +157,34 @@ export default function ConfigurationPage() {
                 {...form.getInputProps('aiEnabled', { type: 'checkbox' })}
               />
 
+              <Select
+                label='AI provider'
+                data={Object.entries(providerPresets).map(([value, preset]) => ({
+                  value,
+                  label: preset.label,
+                }))}
+                value={form.values.aiProvider}
+                onChange={(value) => {
+                  if (!value) return;
+                  const provider = value as AiProvider;
+                  form.setFieldValue('aiProvider', provider);
+                  form.setFieldValue('aiBaseUrl', providerPresets[provider].baseUrl);
+                  form.setFieldValue('aiModel', providerPresets[provider].model);
+                }}
+                allowDeselect={false}
+              />
+
               <TextInput
                 label='Provider base URL'
-                description='The extension appends /chat/completions. For example: https://api.openai.com/v1'
-                placeholder='https://api.openai.com/v1'
+                description={providerPresets[form.values.aiProvider].description}
+                placeholder={providerPresets[form.values.aiProvider].baseUrl}
                 type='url'
                 {...form.getInputProps('aiBaseUrl')}
               />
 
               <TextInput
                 label='Model'
-                placeholder='gpt-4o-mini'
+                placeholder={providerPresets[form.values.aiProvider].model}
                 {...form.getInputProps('aiModel')}
               />
 
@@ -139,7 +193,9 @@ export default function ConfigurationPage() {
                 description={
                   apiKeyConfigured
                     ? 'A key is stored securely. Leave this blank to keep it unchanged.'
-                    : 'The API key is encrypted in the Panel settings database.'
+                    : form.values.aiProvider === 'ollama'
+                      ? 'Optional for a local Ollama endpoint.'
+                      : 'The API key is encrypted in the Panel settings database.'
                 }
                 leftSection={<FontAwesomeIcon icon={faLock} aria-hidden='true' />}
                 autoComplete='new-password'
@@ -162,7 +218,9 @@ export default function ConfigurationPage() {
                 {...form.getInputProps('aiSystemPrompt')}
               />
 
-              {!apiKeyConfigured && form.values.aiEnabled && (
+              {!apiKeyConfigured &&
+                form.values.aiEnabled &&
+                form.values.aiProvider !== 'ollama' && (
                 <Alert color='yellow' title='API key required'>
                   Save a provider API key before users can start an AI conversation.
                 </Alert>

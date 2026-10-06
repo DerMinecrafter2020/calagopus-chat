@@ -66,8 +66,17 @@ export const sendMessageResponseSchema = z.object({
   aiMessageUuid: z.string().uuid().nullable(),
 });
 
+export const aiProviderSchema = z.enum([
+  'openai_compatible',
+  'openrouter',
+  'anthropic',
+  'google_gemini',
+  'ollama',
+]);
+
 export const adminSettingsSchema = z.object({
   aiEnabled: z.boolean(),
+  aiProvider: aiProviderSchema,
   aiBaseUrl: z.string(),
   aiModel: z.string(),
   aiSystemPrompt: z.string(),
@@ -80,6 +89,7 @@ export const adminSettingsResponseSchema = z.object({
 
 export const updateAdminSettingsSchema = z.object({
   aiEnabled: z.boolean(),
+  aiProvider: aiProviderSchema,
   aiBaseUrl: z.string().url().max(512),
   aiModel: z.string().trim().min(1).max(128),
   aiSystemPrompt: z.string().trim().min(1).max(4000),
@@ -89,6 +99,7 @@ export const updateAdminSettingsSchema = z.object({
 
 export type Conversation = z.infer<typeof conversationSchema>;
 export type ConversationKind = z.infer<typeof conversationKindSchema>;
+export type AiProvider = z.infer<typeof aiProviderSchema>;
 export type ChatMessage = z.infer<typeof messageSchema>;
 export type ChatUser = z.infer<typeof userSummarySchema>;
 export type UpdateAdminSettings = z.infer<typeof updateAdminSettingsSchema>;

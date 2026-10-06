@@ -13,6 +13,7 @@ use utoipa::ToSchema;
 #[serde(default)]
 pub struct ExtensionSettingsData {
     pub ai_enabled: bool,
+    pub ai_provider: compact_str::CompactString,
     pub ai_base_url: compact_str::CompactString,
     pub ai_model: compact_str::CompactString,
     pub ai_api_key: compact_str::CompactString,
@@ -23,6 +24,7 @@ impl Default for ExtensionSettingsData {
     fn default() -> Self {
         Self {
             ai_enabled: false,
+            ai_provider: "openai_compatible".into(),
             ai_base_url: "https://api.openai.com/v1".into(),
             ai_model: "gpt-4o-mini".into(),
             ai_api_key: compact_str::CompactString::default(),
@@ -34,8 +36,16 @@ impl Default for ExtensionSettingsData {
 
 impl ExtensionSettingsData {
     pub fn ai_available(&self) -> bool {
+        let supported_provider = matches!(
+            self.ai_provider.as_str(),
+            "openai_compatible" | "openrouter" | "anthropic" | "google_gemini" | "ollama"
+        );
+        let key_configured =
+            self.ai_provider.as_str() == "ollama" || !self.ai_api_key.trim().is_empty();
+
         self.ai_enabled
-            && !self.ai_api_key.trim().is_empty()
+            && supported_provider
+            && key_configured
             && !self.ai_model.trim().is_empty()
             && !self.ai_base_url.trim().is_empty()
     }
@@ -49,6 +59,7 @@ impl SettingsSerializeExt for ExtensionSettingsData {
     ) -> Result<SettingsSerializer, anyhow::Error> {
         let serializer = serializer
             .write_raw_setting("ai_enabled", self.ai_enabled.to_compact_string())
+            .write_raw_setting("ai_provider", self.ai_provider.clone())
             .write_raw_setting("ai_base_url", self.ai_base_url.clone())
             .write_raw_setting("ai_model", self.ai_model.clone())
             .write_raw_setting("ai_system_prompt", self.ai_system_prompt.clone());
@@ -77,6 +88,9 @@ impl SettingsDeserializeExt for ExtensionSettingsDataDeserializer {
                 .take_raw_setting("ai_enabled")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(false),
+            ai_provider: deserializer
+                .take_raw_setting("ai_provider")
+                .unwrap_or_else(|| "openai_compatible".into()),
             ai_base_url: deserializer
                 .take_raw_setting("ai_base_url")
                 .unwrap_or_else(|| "https://api.openai.com/v1".into()),

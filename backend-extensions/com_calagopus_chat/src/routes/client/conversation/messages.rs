@@ -105,21 +105,6 @@ mod post {
         ai_message_uuid: Option<uuid::Uuid>,
     }
 
-    #[derive(Deserialize)]
-    struct ProviderResponse {
-        choices: Vec<ProviderChoice>,
-    }
-
-    #[derive(Deserialize)]
-    struct ProviderChoice {
-        message: ProviderMessage,
-    }
-
-    #[derive(Deserialize)]
-    struct ProviderMessage {
-        content: String,
-    }
-
     #[utoipa::path(post, path = "/", params(
         ("conversation" = uuid::Uuid, Path, description = "The conversation ID."),
     ), responses(
@@ -277,10 +262,31 @@ mod post {
             .collect::<Result<Vec<_>, sqlx::Error>>()?;
         history.reverse();
 
+        let answer = match settings.ai_provider.as_str() {
+            "openai_compatible" | "openrouter" | "ollama" => {
+                generate_openai_compatible_reply(state, settings, &history).await?
+            }
+            "anthropic" => generate_anthropic_reply(state, settings, &history).await?,
+            "google_gemini" => generate_gemini_reply(state, settings, &history).await?,
+            provider => return Err(anyhow::anyhow!("unsupported AI provider `{provider}`")),
+        };
+        let answer = answer.trim();
+        if answer.is_empty() {
+            return Err(anyhow::anyhow!("AI provider returned an empty answer"));
+        }
+
+        Ok(answer.chars().take(8000).collect())
+    }
+
+    fn openai_messages(
+        settings: &crate::settings::ExtensionSettingsData,
+        history: &[(String, String)],
+    ) -> Vec<serde_json::Value> {
         let mut messages = vec![serde_json::json!({
             "role": "system",
             "content": settings.ai_system_prompt.as_str(),
         })];
+
         for (sender_kind, content) in history {
             messages.push(serde_json::json!({
                 "role": if sender_kind == "ai" { "assistant" } else { "user" },
@@ -288,39 +294,143 @@ mod post {
             }));
         }
 
-        let endpoint = format!(
-            "{}/chat/completions",
-            settings.ai_base_url.trim_end_matches('/')
-        );
-        let response = state
-            .client
-            .post(endpoint)
-            .bearer_auth(settings.ai_api_key.as_str())
-            .json(&serde_json::json!({
-                "model": settings.ai_model.as_str(),
-                "messages": messages,
-            }))
-            .send()
-            .await?;
+        messages
+    }
 
+    async fn send_provider_request(
+        request: reqwest::RequestBuilder,
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        let response = request.send().await?;
         let status = response.status();
         if !status.is_success() {
             return Err(anyhow::anyhow!("AI provider returned HTTP {status}"));
         }
 
-        let response: ProviderResponse = response.json().await?;
-        let answer = response
-            .choices
-            .into_iter()
-            .next()
-            .map(|choice| choice.message.content)
-            .unwrap_or_default();
-        let answer = answer.trim();
-        if answer.is_empty() {
-            return Err(anyhow::anyhow!("AI provider returned an empty answer"));
+        Ok(response.json().await?)
+    }
+
+    async fn generate_openai_compatible_reply(
+        state: &shared::State,
+        settings: &crate::settings::ExtensionSettingsData,
+        history: &[(String, String)],
+    ) -> Result<String, anyhow::Error> {
+        let endpoint = format!(
+            "{}/chat/completions",
+            settings.ai_base_url.trim_end_matches('/')
+        );
+        let mut request = state.client.post(endpoint).json(&serde_json::json!({
+            "model": settings.ai_model.as_str(),
+            "messages": openai_messages(settings, history),
+            "max_tokens": 1024,
+        }));
+
+        if !settings.ai_api_key.trim().is_empty() {
+            request = request.bearer_auth(settings.ai_api_key.as_str());
+        }
+        if settings.ai_provider.as_str() == "openrouter" {
+            request = request
+                .header("HTTP-Referer", "https://calagopus.com")
+                .header("X-Title", "Calagopus Chat");
         }
 
-        Ok(answer.chars().take(8000).collect())
+        let response = send_provider_request(request).await?;
+        let content = response
+            .pointer("/choices/0/message/content")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("AI provider returned no chat-completion text"))?;
+
+        Ok(content.to_string())
+    }
+
+    async fn generate_anthropic_reply(
+        state: &shared::State,
+        settings: &crate::settings::ExtensionSettingsData,
+        history: &[(String, String)],
+    ) -> Result<String, anyhow::Error> {
+        let messages = history
+            .iter()
+            .map(|(sender_kind, content)| {
+                serde_json::json!({
+                    "role": if sender_kind == "ai" { "assistant" } else { "user" },
+                    "content": content,
+                })
+            })
+            .collect::<Vec<_>>();
+        let endpoint = format!("{}/v1/messages", settings.ai_base_url.trim_end_matches('/'));
+        let response = send_provider_request(
+            state
+                .client
+                .post(endpoint)
+                .header("x-api-key", settings.ai_api_key.as_str())
+                .header("anthropic-version", "2023-06-01")
+                .json(&serde_json::json!({
+                    "model": settings.ai_model.as_str(),
+                    "max_tokens": 1024,
+                    "system": settings.ai_system_prompt.as_str(),
+                    "messages": messages,
+                })),
+        )
+        .await?;
+
+        let blocks = response
+            .get("content")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| anyhow::anyhow!("Anthropic returned no message content"))?;
+        let answer = blocks
+            .iter()
+            .filter(|block| block.get("type").and_then(serde_json::Value::as_str) == Some("text"))
+            .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+            .collect::<Vec<_>>()
+            .join("");
+
+        Ok(answer)
+    }
+
+    async fn generate_gemini_reply(
+        state: &shared::State,
+        settings: &crate::settings::ExtensionSettingsData,
+        history: &[(String, String)],
+    ) -> Result<String, anyhow::Error> {
+        let contents = history
+            .iter()
+            .map(|(sender_kind, content)| {
+                serde_json::json!({
+                    "role": if sender_kind == "ai" { "model" } else { "user" },
+                    "parts": [{ "text": content }],
+                })
+            })
+            .collect::<Vec<_>>();
+        let model = urlencoding::encode(settings.ai_model.as_str());
+        let endpoint = format!(
+            "{}/models/{model}:generateContent",
+            settings.ai_base_url.trim_end_matches('/')
+        );
+        let response = send_provider_request(
+            state
+                .client
+                .post(endpoint)
+                .header("x-goog-api-key", settings.ai_api_key.as_str())
+                .json(&serde_json::json!({
+                    "systemInstruction": {
+                        "parts": [{ "text": settings.ai_system_prompt.as_str() }]
+                    },
+                    "contents": contents,
+                    "generationConfig": { "maxOutputTokens": 1024 },
+                })),
+        )
+        .await?;
+
+        let parts = response
+            .pointer("/candidates/0/content/parts")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| anyhow::anyhow!("Google Gemini returned no candidate text"))?;
+        let answer = parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+            .collect::<Vec<_>>()
+            .join("");
+
+        Ok(answer)
     }
 }
 
