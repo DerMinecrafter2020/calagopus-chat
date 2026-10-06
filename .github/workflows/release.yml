@@ -175,24 +175,6 @@ jobs:
           ln -s ../../backend-extensions/com_calagopus_chat/frontend \
             panel/frontend/extensions/com_calagopus_chat
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: panel -> target
-          shared-key: ${{ matrix.panel_ref }}
-          add-rust-environment-hash-key: false
-          cache-workspace-crates: true
-
-      - name: Build Rust extension with the Panel profile
-        working-directory: panel
-        env:
-          SQLX_OFFLINE: 'true'
-          CARGO_BUILD_JOBS: '2'
-        run: cargo build --profile heavy-release --package com_calagopus_chat
-
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -213,6 +195,24 @@ jobs:
       - name: Type-check and build Panel frontend with the extension
         working-directory: panel/frontend
         run: pnpm build:ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel -> target
+          shared-key: ${{ matrix.panel_ref }}
+          add-rust-environment-hash-key: false
+          cache-workspace-crates: true
+
+      - name: Build Rust extension with the Panel profile
+        working-directory: panel
+        env:
+          SQLX_OFFLINE: 'true'
+          CARGO_BUILD_JOBS: '2'
+        run: cargo build --profile heavy-release --package com_calagopus_chat
 
   release:
     name: Package and publish extension
