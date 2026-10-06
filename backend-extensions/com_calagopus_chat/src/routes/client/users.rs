@@ -1,9 +1,9 @@
 use axum::extract::Query;
 use serde::{Deserialize, Serialize};
 use shared::{
-    ApiResponse, GetState,
+    GetState,
     models::user::{GetPermissionManager, GetUser},
-    response::ApiResponseResult,
+    response::{ApiResponse, ApiResponseResult},
 };
 use sqlx::Row;
 use utoipa::ToSchema;

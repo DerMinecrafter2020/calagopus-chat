@@ -1,9 +1,9 @@
 use axum::{extract::Path, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use shared::{
-    ApiResponse, GetState, Payload,
+    GetState, Payload,
     models::{user::GetPermissionManager, user_activity::GetUserActivityLogger, user::GetUser},
-    response::ApiResponseResult,
+    response::{ApiResponse, ApiResponseResult},
 };
 use sqlx::Row;
 use utoipa::ToSchema;

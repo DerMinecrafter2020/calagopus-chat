@@ -1,9 +1,9 @@
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use shared::{
-    ApiResponse, GetState, Payload,
+    GetState, Payload,
     models::{admin_activity::GetAdminActivityLogger, user::GetPermissionManager},
-    response::ApiResponseResult,
+    response::{ApiResponse, ApiResponseResult},
 };
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};

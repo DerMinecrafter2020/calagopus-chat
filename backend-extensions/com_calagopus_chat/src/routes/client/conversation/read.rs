@@ -1,9 +1,9 @@
 use axum::{extract::Path, http::StatusCode};
 use serde::Serialize;
 use shared::{
-    ApiResponse, GetState,
+    GetState,
     models::user::{GetPermissionManager, GetUser},
-    response::ApiResponseResult,
+    response::{ApiResponse, ApiResponseResult},
 };
 use utoipa::ToSchema;
 
