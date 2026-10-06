@@ -1,5 +1,8 @@
 # Calagopus Chat changelog
 
+## 0.1.6 — 2026-10-06
+- Added a confirmed option to remove a direct, group, or AI conversation from your chat list without deleting it for other participants.
+
 ## 0.1.5 — 2026-10-06
 - Added provider-reported input and output token totals for AI requests made by Calagopus Chat.
 - Added a dedicated Chat Settings page in the admin sidebar and an in-page changelog.

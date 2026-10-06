@@ -5,6 +5,7 @@ import {
   faPaperPlane,
   faPlus,
   faRobot,
+  faTrash,
   faUser,
   faUsers,
 } from '@fortawesome/free-solid-svg-icons';
@@ -16,6 +17,7 @@ import {
   Checkbox,
   Group,
   Loader,
+  Modal,
   Paper,
   Stack,
   Switch,
@@ -33,6 +35,7 @@ import { useAuth } from '@/providers/AuthProvider.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import createConversation from './api/createConversation.ts';
+import deleteConversationApi from './api/deleteConversation.ts';
 import getConversations from './api/getConversations.ts';
 import getMessages from './api/getMessages.ts';
 import getUsers from './api/getUsers.ts';
@@ -77,6 +80,8 @@ export default function ChatWidget() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [groupTitle, setGroupTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
+  const [deletingConversationUuid, setDeletingConversationUuid] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
 
   const unreadCount = useMemo(
@@ -267,6 +272,27 @@ export default function ChatWidget() {
     setUsers([]);
     setSelectedUsers([]);
     setGroupTitle('');
+  };
+
+  const confirmDeleteChat = async () => {
+    if (!conversationToDelete || deletingConversationUuid) return;
+
+    const conversation = conversationToDelete;
+    setDeletingConversationUuid(conversation.uuid);
+    try {
+      await deleteConversationApi(conversation.uuid);
+      setConversations((current) => current.filter((item) => item.uuid !== conversation.uuid));
+      if (activeConversationUuid === conversation.uuid) {
+        setActiveConversationUuid(null);
+        setMessages([]);
+      }
+      setConversationToDelete(null);
+      addToast(tExt('chat.conversationDeleted', {}), 'success');
+    } catch (error) {
+      addToast(httpErrorToHuman(error), 'error');
+    } finally {
+      setDeletingConversationUuid(null);
+    }
   };
 
   if (!user) return null;
@@ -607,35 +633,50 @@ export default function ChatWidget() {
               ) : (
                 <Stack gap={4}>
                   {conversations.map((conversation) => (
-                    <button
-                      type='button'
-                      key={conversation.uuid}
-                      className='calagopus-chat-conversation-row'
-                      onClick={() => {
-                        setMessages([]);
-                        setActiveConversationUuid(conversation.uuid);
-                      }}
-                    >
-                      <span className='calagopus-chat-row-icon'>
-                        <FontAwesomeIcon icon={conversationIcon(conversation.kind)} aria-hidden='true' />
-                      </span>
-                      <span className='calagopus-chat-row-copy'>
-                        <span className='calagopus-chat-row-title'>
-                          {getConversationTitle(conversation)}
+                    <div className='calagopus-chat-conversation-row' key={conversation.uuid}>
+                      <button
+                        type='button'
+                        className='calagopus-chat-conversation-button'
+                        aria-label={getConversationTitle(conversation)}
+                        onClick={() => {
+                          setMessages([]);
+                          setActiveConversationUuid(conversation.uuid);
+                        }}
+                      >
+                        <span className='calagopus-chat-row-icon'>
+                          <FontAwesomeIcon icon={conversationIcon(conversation.kind)} aria-hidden='true' />
                         </span>
-                        <span className='calagopus-chat-row-preview'>
-                          {conversation.lastMessage ??
-                            (conversation.kind === 'ai'
-                              ? tExt('chat.composeTitle', {})
-                              : tExt('chat.noMessagesPreview', {}))}
+                        <span className='calagopus-chat-row-copy'>
+                          <span className='calagopus-chat-row-title'>
+                            {getConversationTitle(conversation)}
+                          </span>
+                          <span className='calagopus-chat-row-preview'>
+                            {conversation.lastMessage ??
+                              (conversation.kind === 'ai'
+                                ? tExt('chat.composeTitle', {})
+                                : tExt('chat.noMessagesPreview', {}))}
+                          </span>
                         </span>
-                      </span>
-                      {conversation.unreadCount > 0 && (
-                        <Badge size='xs' color='blue' variant='filled'>
-                          {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
-                        </Badge>
-                      )}
-                    </button>
+                        {conversation.unreadCount > 0 && (
+                          <Badge size='xs' color='blue' variant='filled'>
+                            {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+                          </Badge>
+                        )}
+                      </button>
+                      <Tooltip label={tExt('chat.deleteConversation', {})}>
+                        <ActionIcon
+                          className='calagopus-chat-delete-action'
+                          variant='subtle'
+                          color='red'
+                          aria-label={tExt('chat.deleteConversation', {})}
+                          loading={deletingConversationUuid === conversation.uuid}
+                          disabled={deletingConversationUuid !== null}
+                          onClick={() => setConversationToDelete(conversation)}
+                        >
+                          <FontAwesomeIcon icon={faTrash} aria-hidden='true' />
+                        </ActionIcon>
+                      </Tooltip>
+                    </div>
                   ))}
                 </Stack>
               )}
@@ -643,6 +684,39 @@ export default function ChatWidget() {
           )}
         </div>
       )}
+      <Modal
+        opened={conversationToDelete !== null}
+        onClose={() => {
+          if (deletingConversationUuid === null) setConversationToDelete(null);
+        }}
+        title={tExt('chat.deleteConversationTitle', {})}
+        centered
+        size='sm'
+      >
+        <Stack gap='md'>
+          <Text size='sm'>
+            {tExt('chat.deleteConversationDescription', {
+              title: conversationToDelete ? getConversationTitle(conversationToDelete) : '',
+            })}
+          </Text>
+          <Group justify='flex-end'>
+            <Button
+              variant='default'
+              disabled={deletingConversationUuid !== null}
+              onClick={() => setConversationToDelete(null)}
+            >
+              {tPanel('common.button.cancel', {})}
+            </Button>
+            <Button
+              color='red'
+              loading={deletingConversationUuid !== null}
+              onClick={() => void confirmDeleteChat()}
+            >
+              {tExt('chat.deleteConversation', {})}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </aside>
   );
 }

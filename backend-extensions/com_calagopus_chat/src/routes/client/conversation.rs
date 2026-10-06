@@ -1,12 +1,14 @@
 use shared::State;
 use utoipa_axum::router::OpenApiRouter;
 
+mod delete;
 mod messages;
 mod read;
 
 pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
         .routes(utoipa_axum::routes!(read::route))
+        .routes(utoipa_axum::routes!(delete::route))
         .nest("/messages", messages::router(state))
         .with_state(state.clone())
 }

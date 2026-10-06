@@ -101,7 +101,16 @@
   padding: 10px;
 }
 
-.calagopus-chat-conversation-row,
+.calagopus-chat-conversation-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--mantine-radius-md);
+}
+
+.calagopus-chat-conversation-button,
 .calagopus-chat-user-row {
   display: flex;
   width: 100%;
@@ -116,9 +125,27 @@
   cursor: pointer;
 }
 
+.calagopus-chat-conversation-button {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  padding: 5px;
+}
+
 .calagopus-chat-conversation-row:hover,
 .calagopus-chat-user-row:hover {
   background: var(--mantine-color-default-hover);
+}
+
+.calagopus-chat-delete-action {
+  flex: 0 0 auto;
+  opacity: 0.6;
+  transition: opacity 120ms ease;
+}
+
+.calagopus-chat-conversation-row:hover .calagopus-chat-delete-action,
+.calagopus-chat-conversation-row:focus-within .calagopus-chat-delete-action {
+  opacity: 1;
 }
 
 .calagopus-chat-row-icon {
@@ -139,7 +166,7 @@
 }
 
 .calagopus-chat-row-preview {
-  max-width: 235px;
+  max-width: 100%;
   color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-xs);
 }
@@ -328,6 +355,10 @@
 
   .calagopus-chat-message {
     max-width: 94%;
+  }
+
+  .calagopus-chat-delete-action {
+    opacity: 1;
   }
 }
 

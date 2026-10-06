@@ -71,6 +71,8 @@ mod get {
                 ORDER BY messages.created_at DESC, messages.uuid DESC
                 LIMIT 1
             ) AS latest ON true
+            WHERE current_member.hidden_at IS NULL
+               OR latest.created_at > current_member.hidden_at
             ORDER BY COALESCE(latest.created_at, conversations.created_at) DESC,
                      conversations.uuid DESC
             LIMIT 100
@@ -277,6 +279,18 @@ mod post {
             .execute(&mut *transaction)
             .await?;
         }
+
+        sqlx::query(
+            r#"
+            UPDATE com_calagopus_chat_members
+            SET hidden_at = NULL, last_read_at = now()
+            WHERE conversation_uuid = $1 AND user_uuid = $2
+            "#,
+        )
+        .bind(conversation_uuid)
+        .bind(actor_uuid)
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
 
