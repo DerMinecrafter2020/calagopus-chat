@@ -30,6 +30,19 @@ cargo build --profile heavy-release
 
 The extension targets Calagopus Panel `>=1.2.5`. Its frontend uses the official global page slot, frontend API helpers, and extension configuration page; the backend uses Rust routes, extension settings, permissions, and SQL migrations.
 
+## GitHub releases
+
+The GitHub Actions workflow in `.github/workflows/release.yml` creates a GitHub Release with `com_calagopus_chat.c7s.zip` whenever a `vMAJOR.MINOR.PATCH` tag is pushed. It verifies that the tag matches the versions in both `Cargo.toml` and `frontend/package.json`, then packages the root `Metadata.toml`, `backend/`, `frontend/`, and `migrations/` entries in the archive layout Calagopus expects.
+
+To publish a release, update both package versions, commit the change, and push the matching tag. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md). For example:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
+
 ## Configure AI
 
 1. Install and enable **Calagopus Chat** in the Panel.
