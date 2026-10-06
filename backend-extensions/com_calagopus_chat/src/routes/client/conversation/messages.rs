@@ -289,7 +289,7 @@ mod post {
 
         for (sender_kind, content) in history {
             messages.push(serde_json::json!({
-                "role": if sender_kind == "ai" { "assistant" } else { "user" },
+                "role": if sender_kind.as_str() == "ai" { "assistant" } else { "user" },
                 "content": content,
             }));
         }
@@ -351,7 +351,7 @@ mod post {
             .iter()
             .map(|(sender_kind, content)| {
                 serde_json::json!({
-                    "role": if sender_kind == "ai" { "assistant" } else { "user" },
+                    "role": if sender_kind.as_str() == "ai" { "assistant" } else { "user" },
                     "content": content,
                 })
             })
@@ -395,7 +395,7 @@ mod post {
             .iter()
             .map(|(sender_kind, content)| {
                 serde_json::json!({
-                    "role": if sender_kind == "ai" { "model" } else { "user" },
+                    "role": if sender_kind.as_str() == "ai" { "model" } else { "user" },
                     "parts": [{ "text": content }],
                 })
             })

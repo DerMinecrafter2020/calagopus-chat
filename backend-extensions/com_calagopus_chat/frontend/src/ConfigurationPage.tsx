@@ -57,7 +57,7 @@ const providerPresets: Record<AiProvider, { label: string; baseUrl: string; mode
     label: 'Ollama (local)',
     baseUrl: 'http://localhost:11434/v1',
     model: 'llama3.2',
-    description: 'Uses Ollama’s OpenAI-compatible endpoint. An API key is optional.',
+    description: 'Uses Ollama’s OpenAI-compatible endpoint. Enter a URL reachable from the Panel; an API key is optional.',
   },
 };
 
