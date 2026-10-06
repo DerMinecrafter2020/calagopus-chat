@@ -12,6 +12,7 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 - An extension configuration page under **Admin → Extensions → Calagopus Chat** for the AI URL, model, API key, system prompt, and enable switch.
 - API keys are stored through Calagopus's encrypted extension-settings API; chat content and API keys are not written to activity-log payloads.
 - Mantine components and theme CSS variables keep the widget aligned with the active light/dark theme and custom panel palettes.
+- UI strings use Calagopus's translation system, with English fallbacks when a localized extension string is unavailable.
 
 ## Extension layout
 

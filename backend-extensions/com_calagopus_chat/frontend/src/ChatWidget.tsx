@@ -31,6 +31,7 @@ import { httpErrorToHuman } from '@/api/axios.ts';
 import { useUserSetting } from '@/lib/userSettings.ts';
 import { useAuth } from '@/providers/AuthProvider.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
+import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import createConversation from './api/createConversation.ts';
 import getConversations from './api/getConversations.ts';
 import getMessages from './api/getMessages.ts';
@@ -38,15 +39,7 @@ import getUsers from './api/getUsers.ts';
 import markConversationRead from './api/markConversationRead.ts';
 import postMessage from './api/sendMessage.ts';
 import type { ChatMessage, ChatUser, Conversation, ConversationKind } from './lib/schemas.ts';
-
-function getConversationTitle(conversation: Conversation | undefined): string {
-  if (!conversation) return 'Conversation';
-  if (conversation.kind === 'ai') return conversation.title ?? 'Calagopus AI';
-  if (conversation.kind === 'group') {
-    return conversation.title || conversation.participants.join(', ') || 'Group chat';
-  }
-  return conversation.participants[0] ?? 'Direct message';
-}
+import { useExtTranslations } from './translations.ts';
 
 function conversationIcon(kind: ConversationKind) {
   if (kind === 'ai') return faRobot;
@@ -61,6 +54,8 @@ function formatTime(date: Date): string {
 export default function ChatWidget() {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const { t: tExt } = useExtTranslations();
+  const { t: tPanel } = useTranslations();
   const [sendOnEnter, setSendOnEnter] = useUserSetting(
     'com.calagopus.chat::send_on_enter',
     z.boolean(),
@@ -91,6 +86,15 @@ export default function ChatWidget() {
   const activeConversation = conversations.find(
     (conversation) => conversation.uuid === activeConversationUuid,
   );
+  const getConversationTitle = (conversation: Conversation | undefined): string => {
+    if (!conversation) return tExt('chat.conversation', {});
+    if (conversation.kind === 'ai') return tExt('chat.aiTitle', {});
+    if (conversation.kind === 'group') {
+      if (conversation.title === 'Group chat') return tExt('chat.groupFallback', {});
+      return conversation.title || conversation.participants.join(', ') || tExt('chat.groupFallback', {});
+    }
+    return conversation.participants[0] ?? tExt('chat.directFallback', {});
+  };
 
   const loadConversations = useCallback(
     async (silent = false) => {
@@ -270,13 +274,17 @@ export default function ChatWidget() {
   return (
     <aside
       className={`calagopus-chat-widget${expanded ? ' is-expanded' : ''}`}
-      aria-label='Calagopus Chat'
+      aria-label={tExt('chat.brand', {})}
     >
       {!expanded ? (
         <button
           type='button'
           className='calagopus-chat-collapsed'
-          aria-label={`Open chat${unreadCount > 0 ? `, ${unreadCount} unread messages` : ''}`}
+          aria-label={
+            unreadCount > 0
+              ? tExt('chat.openUnread', { count: unreadCount })
+              : tExt('chat.open', {})
+          }
           aria-expanded={false}
           onClick={() => setExpanded(true)}
         >
@@ -284,11 +292,20 @@ export default function ChatWidget() {
             <FontAwesomeIcon icon={faComments} aria-hidden='true' />
           </span>
           <span className='calagopus-chat-collapsed-copy'>
-            <span className='calagopus-chat-collapsed-title'>Chat</span>
-            <span className='calagopus-chat-collapsed-subtitle'>Calagopus messages</span>
+            <span className='calagopus-chat-collapsed-title'>
+              {tExt('chat.collapsedTitle', {})}
+            </span>
+            <span className='calagopus-chat-collapsed-subtitle'>
+              {tExt('chat.collapsedSubtitle', {})}
+            </span>
           </span>
           {unreadCount > 0 && (
-            <Badge size='sm' color='blue' variant='filled' aria-label={`${unreadCount} unread`}>
+            <Badge
+              size='sm'
+              color='blue'
+              variant='filled'
+              aria-label={tExt('chat.unread', { count: unreadCount })}
+            >
               {unreadCount > 99 ? '99+' : unreadCount}
             </Badge>
           )}
@@ -297,10 +314,10 @@ export default function ChatWidget() {
         <div className='calagopus-chat-shell'>
           <header className='calagopus-chat-header'>
             {(activeConversationUuid || composeMode) && (
-              <Tooltip label='Back to conversations'>
+              <Tooltip label={tExt('chat.back', {})}>
                 <ActionIcon
                   variant='subtle'
-                  aria-label='Back to conversations'
+                  aria-label={tExt('chat.back', {})}
                   onClick={() => {
                     setActiveConversationUuid(null);
                     setComposeMode(null);
@@ -321,36 +338,36 @@ export default function ChatWidget() {
                 {activeConversationUuid
                   ? getConversationTitle(activeConversation)
                   : composeMode
-                    ? 'Start a conversation'
-                    : 'Calagopus Chat'}
+                    ? tExt('chat.composeTitle', {})
+                    : tExt('chat.brand', {})}
               </Text>
               <Text size='xs' c='dimmed' truncate>
                 {activeConversation?.kind === 'ai'
-                  ? 'Private AI conversation'
+                  ? tExt('chat.privateAiSubtitle', {})
                   : activeConversationUuid
                     ? activeConversation?.kind === 'group'
-                      ? 'Group conversation'
-                      : 'Direct message'
+                      ? tExt('chat.groupSubtitle', {})
+                      : tExt('chat.directSubtitle', {})
                     : composeMode
-                      ? 'Choose who to chat with'
-                      : 'Messages and groups'}
+                      ? tExt('chat.composeSubtitle', {})
+                      : tExt('chat.listSubtitle', {})}
               </Text>
             </div>
             {!activeConversationUuid && !composeMode && (
-              <Tooltip label='New conversation'>
+              <Tooltip label={tExt('chat.newConversation', {})}>
                 <ActionIcon
                   variant='subtle'
-                  aria-label='New conversation'
+                  aria-label={tExt('chat.newConversation', {})}
                   onClick={openNewChat}
                 >
                   <FontAwesomeIcon icon={faPlus} aria-hidden='true' />
                 </ActionIcon>
               </Tooltip>
             )}
-            <Tooltip label='Minimize chat'>
+            <Tooltip label={tExt('chat.minimize', {})}>
               <ActionIcon
                 variant='subtle'
-                aria-label='Minimize chat'
+                aria-label={tExt('chat.minimize', {})}
                 onClick={() => setExpanded(false)}
               >
                 <FontAwesomeIcon icon={faMinus} aria-hidden='true' />
@@ -367,12 +384,23 @@ export default function ChatWidget() {
                   </div>
                 ) : messages.length === 0 ? (
                   <div className='calagopus-chat-centered-state'>
-                    <Text size='sm' c='dimmed'>No messages yet. Say hello.</Text>
+                    <Text size='sm' c='dimmed'>{tExt('chat.noMessages', {})}</Text>
                   </div>
                 ) : (
                   <Stack gap='xs'>
                     {messages.map((message) => (
-                      <MessageBubble key={message.uuid} message={message} own={message.senderUuid === user.uuid} />
+                      <MessageBubble
+                        key={message.uuid}
+                        message={message}
+                        own={message.senderUuid === user.uuid}
+                        senderLabel={
+                          message.isAi
+                            ? tExt('chat.aiTitle', {})
+                            : message.senderUuid
+                              ? message.senderUsername
+                              : tExt('chat.formerUser', {})
+                        }
+                      />
                     ))}
                   </Stack>
                 )}
@@ -381,18 +409,20 @@ export default function ChatWidget() {
                 <Group className='calagopus-chat-composer-options' justify='space-between' gap='xs'>
                   <Switch
                     size='xs'
-                    label='Enter sends'
+                    label={tExt('chat.enterSends', {})}
                     checked={sendOnEnter}
                     onChange={(event) => setSendOnEnter(event.currentTarget.checked)}
                   />
                   <Text size='xs' c='dimmed'>
-                    {sendOnEnter ? 'Shift+Enter for a new line' : 'Ctrl/⌘+Enter to send'}
+                    {sendOnEnter
+                      ? tExt('chat.shiftEnterNewLine', {})
+                      : tExt('chat.controlEnterSends', {})}
                   </Text>
                 </Group>
                 <div className='calagopus-chat-composer-row'>
                   <Textarea
-                    aria-label='Write a message'
-                    placeholder='Write a message…'
+                    aria-label={tExt('chat.writeMessage', {})}
+                    placeholder={tExt('chat.messagePlaceholder', {})}
                     value={draft}
                     onChange={(event) => setDraft(event.currentTarget.value)}
                     onKeyDown={(event) => {
@@ -410,12 +440,18 @@ export default function ChatWidget() {
                     maxLength={4000}
                     disabled={sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
                   />
-                  <Tooltip label={sendOnEnter ? 'Send message (Enter)' : 'Send message (Ctrl/⌘ + Enter)'}>
+                  <Tooltip
+                    label={
+                      sendOnEnter
+                        ? tExt('chat.sendTooltipEnter', {})
+                        : tExt('chat.sendTooltipControlEnter', {})
+                    }
+                  >
                     <ActionIcon
                       type='submit'
                       size='lg'
                       variant='filled'
-                      aria-label='Send message'
+                      aria-label={tPanel('common.button.send', {})}
                       disabled={!draft.trim() || sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
                       loading={sending}
                     >
@@ -426,7 +462,7 @@ export default function ChatWidget() {
               </form>
               {activeConversation?.kind === 'ai' && !aiAvailable && (
                 <Text className='calagopus-chat-ai-notice' size='xs' c='dimmed'>
-                  AI chat is not configured by an administrator.
+                  {tExt('chat.aiNotConfigured', {})}
                 </Text>
               )}
             </div>
@@ -441,7 +477,7 @@ export default function ChatWidget() {
                     setSelectedUsers([]);
                   }}
                 >
-                  Direct
+                  {tExt('chat.direct', {})}
                 </Button>
                 <Button
                   size='xs'
@@ -451,7 +487,7 @@ export default function ChatWidget() {
                     setSelectedUsers([]);
                   }}
                 >
-                  Group
+                  {tExt('chat.group', {})}
                 </Button>
                 <Button
                   size='xs'
@@ -460,18 +496,18 @@ export default function ChatWidget() {
                   disabled={!aiAvailable}
                   leftSection={<FontAwesomeIcon icon={faRobot} aria-hidden='true' />}
                 >
-                  AI
+                  {tExt('chat.ai', {})}
                 </Button>
               </Group>
 
               {composeMode === 'ai' ? (
                 <Stack gap='sm' className='calagopus-chat-compose-ai'>
                   <Text size='sm' c='dimmed'>
-                    Start a private conversation with the AI assistant configured by your panel administrator.
+                    {tExt('chat.privateAiDescription', {})}
                   </Text>
                   {!aiAvailable && (
                     <Paper withBorder radius='sm' p='sm'>
-                      <Text size='sm' c='dimmed'>AI chat is currently unavailable.</Text>
+                      <Text size='sm' c='dimmed'>{tExt('chat.aiUnavailable', {})}</Text>
                     </Paper>
                   )}
                   <Button
@@ -480,29 +516,29 @@ export default function ChatWidget() {
                     disabled={!aiAvailable}
                     leftSection={<FontAwesomeIcon icon={faRobot} aria-hidden='true' />}
                   >
-                    Start AI chat
+                    {tExt('chat.startAiChat', {})}
                   </Button>
                 </Stack>
               ) : (
                 <>
                   {composeMode === 'group' && (
                     <TextInput
-                      label='Group name'
-                      placeholder='Optional group name'
+                      label={tExt('chat.groupName', {})}
+                      placeholder={tExt('chat.optionalGroupName', {})}
                       value={groupTitle}
                       onChange={(event) => setGroupTitle(event.currentTarget.value)}
                       maxLength={80}
                     />
                   )}
                   <TextInput
-                    aria-label='Search users'
-                    placeholder='Search users by username…'
+                    aria-label={tExt('chat.searchUsers', {})}
+                    placeholder={tPanel('common.input.search', {})}
                     value={search}
                     onChange={(event) => setSearch(event.currentTarget.value)}
                   />
                   {composeMode === 'group' && (
                     <Text size='xs' c='dimmed'>
-                      Select at least two people to create a group.
+                      {tExt('chat.selectGroupPeople', {})}
                     </Text>
                   )}
                   <div className='calagopus-chat-user-results'>
@@ -511,7 +547,9 @@ export default function ChatWidget() {
                         <Loader size='sm' />
                       </div>
                     ) : users.length === 0 ? (
-                      <Text size='sm' c='dimmed' ta='center' py='md'>No users found.</Text>
+                      <Text size='sm' c='dimmed' ta='center' py='md'>
+                        {tExt('chat.noUsersFound', {})}
+                      </Text>
                     ) : (
                       <Stack gap={4}>
                         {users.map((chatUser) => (
@@ -543,7 +581,7 @@ export default function ChatWidget() {
                       disabled={selectedUsers.length < 2}
                       leftSection={<FontAwesomeIcon icon={faUsers} aria-hidden='true' />}
                     >
-                      Create group ({selectedUsers.length})
+                      {tExt('chat.createGroup', { count: selectedUsers.length })}
                     </Button>
                   )}
                 </>
@@ -558,12 +596,12 @@ export default function ChatWidget() {
               ) : conversations.length === 0 ? (
                 <div className='calagopus-chat-centered-state calagopus-chat-empty'>
                   <FontAwesomeIcon icon={faComments} aria-hidden='true' />
-                  <Text fw={600}>Your chats start here</Text>
+                  <Text fw={600}>{tExt('chat.emptyTitle', {})}</Text>
                   <Text size='sm' c='dimmed' ta='center'>
-                    Start a direct message, make a group, or chat with the AI assistant.
+                    {tExt('chat.emptyDescription', {})}
                   </Text>
                   <Button size='xs' onClick={openNewChat} leftSection={<FontAwesomeIcon icon={faPlus} />}>
-                    New conversation
+                    {tExt('chat.newConversationButton', {})}
                   </Button>
                 </div>
               ) : (
@@ -587,7 +625,9 @@ export default function ChatWidget() {
                         </span>
                         <span className='calagopus-chat-row-preview'>
                           {conversation.lastMessage ??
-                            (conversation.kind === 'ai' ? 'Start a conversation' : 'No messages yet')}
+                            (conversation.kind === 'ai'
+                              ? tExt('chat.composeTitle', {})
+                              : tExt('chat.noMessagesPreview', {}))}
                         </span>
                       </span>
                       {conversation.unreadCount > 0 && (
@@ -607,10 +647,22 @@ export default function ChatWidget() {
   );
 }
 
-function MessageBubble({ message, own }: { message: ChatMessage; own: boolean }) {
+function MessageBubble({
+  message,
+  own,
+  senderLabel,
+}: {
+  message: ChatMessage;
+  own: boolean;
+  senderLabel: string;
+}) {
   return (
     <div className={`calagopus-chat-message${own ? ' is-own' : ''}${message.isAi ? ' is-ai' : ''}`}>
-      {!own && <Text className='calagopus-chat-message-author' size='xs' c='dimmed'>{message.senderUsername}</Text>}
+      {!own && (
+        <Text className='calagopus-chat-message-author' size='xs' c='dimmed'>
+          {senderLabel}
+        </Text>
+      )}
       <Paper withBorder radius='md' p='xs' className='calagopus-chat-message-paper'>
         <Text size='sm' className='calagopus-chat-message-text' style={{ whiteSpace: 'pre-wrap' }}>
           {message.content}

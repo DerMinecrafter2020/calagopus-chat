@@ -19,6 +19,7 @@ import {
 } from '@mantine/core';
 import { useEffect, useState } from 'react';
 import { httpErrorToHuman } from '@/api/axios.ts';
+import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import getAdminSettings from './api/getAdminSettings.ts';
 import getProviderModels from './api/getProviderModels.ts';
@@ -28,47 +29,56 @@ import {
   type AiProvider,
   type UpdateAdminSettings,
 } from './lib/schemas.ts';
+import { useExtTranslations } from './translations.ts';
 
-const providerPresets: Record<AiProvider, { label: string; baseUrl: string; model: string; description: string }> = {
+const providerPresets: Record<AiProvider, { baseUrl: string; model: string }> = {
   openai_compatible: {
-    label: 'OpenAI-compatible (OpenAI, Groq, DeepSeek, Mistral, Together, etc.)',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
-    description: 'Use a Chat Completions-compatible endpoint and set its base URL below.',
   },
   openrouter: {
-    label: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
     model: 'openai/gpt-4o-mini',
-    description: 'Use an OpenRouter model id, for example openai/gpt-4o-mini.',
   },
   anthropic: {
-    label: 'Anthropic',
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-3-5-haiku-latest',
-    description: 'Uses Anthropic Messages API. Set a Claude model id below.',
   },
   google_gemini: {
-    label: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     model: 'gemini-2.5-flash',
-    description: 'Uses the Gemini generateContent API. Set a Gemini model id below.',
   },
   ollama: {
-    label: 'Ollama (local)',
     baseUrl: 'http://localhost:11434/v1',
     model: 'llama3.2',
-    description: 'Uses Ollama’s OpenAI-compatible endpoint. Enter a URL reachable from the Panel; an API key is optional.',
   },
 };
 
 export default function ConfigurationPage() {
   const { addToast } = useToast();
+  const { t: tExt } = useExtTranslations();
+  const { t: tPanel } = useTranslations();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+
+  const providerOptions = [
+    { value: 'openai_compatible', label: tExt('settings.providers.openaiCompatible', {}) },
+    { value: 'openrouter', label: tExt('settings.providers.openrouter', {}) },
+    { value: 'anthropic', label: tExt('settings.providers.anthropic', {}) },
+    { value: 'google_gemini', label: tExt('settings.providers.googleGemini', {}) },
+    { value: 'ollama', label: tExt('settings.providers.ollama', {}) },
+  ];
+
+  const providerDescription: Record<AiProvider, string> = {
+    openai_compatible: tExt('settings.providers.openaiCompatibleDescription', {}),
+    openrouter: tExt('settings.providers.openrouterDescription', {}),
+    anthropic: tExt('settings.providers.anthropicDescription', {}),
+    google_gemini: tExt('settings.providers.googleGeminiDescription', {}),
+    ollama: tExt('settings.providers.ollamaDescription', {}),
+  };
 
   const form = useForm<UpdateAdminSettings>({
     initialValues: {
@@ -120,7 +130,7 @@ export default function ConfigurationPage() {
       else if (values.aiApiKey.trim()) setApiKeyConfigured(true);
       form.setFieldValue('aiApiKey', '');
       form.setFieldValue('clearApiKey', false);
-      addToast('Chat settings saved.', 'success');
+      addToast(tExt('settings.settingsSaved', {}), 'success');
     } catch (error) {
       addToast(httpErrorToHuman(error), 'error');
     } finally {
@@ -139,8 +149,8 @@ export default function ConfigurationPage() {
       setAvailableModels(response.models);
       addToast(
         response.models.length > 0
-          ? `Loaded ${response.models.length} models.`
-          : 'The provider returned no models.',
+          ? tExt('settings.modelsLoaded', { count: response.models.length })
+          : tExt('settings.noModels', {}),
         response.models.length > 0 ? 'success' : 'warning',
       );
     } catch (error) {
@@ -154,7 +164,7 @@ export default function ConfigurationPage() {
     return (
       <Group justify='center' py='xl'>
         <Loader size='sm' />
-        <Text size='sm' c='dimmed'>Loading chat settings…</Text>
+        <Text size='sm' c='dimmed'>{tExt('settings.loading', {})}</Text>
       </Group>
     );
   }
@@ -166,10 +176,9 @@ export default function ConfigurationPage() {
           <Group gap='sm' align='flex-start'>
             <FontAwesomeIcon icon={faRobot} aria-hidden='true' />
             <div>
-              <Text fw={700}>AI assistant</Text>
+              <Text fw={700}>{tExt('settings.title', {})}</Text>
               <Text size='sm' c='dimmed'>
-                Choose a provider, model, and credentials. AI chat stays unavailable until enabled
-                and the selected provider is configured.
+                {tExt('settings.description', {})}
               </Text>
             </div>
           </Group>
@@ -177,17 +186,14 @@ export default function ConfigurationPage() {
           <form onSubmit={form.onSubmit(doSave)} autoComplete='off'>
             <Stack gap='md'>
               <Switch
-                label='Enable AI chat'
-                description='Allow panel users to create private AI conversations.'
+                label={tExt('settings.enableAi', {})}
+                description={tExt('settings.enableAiDescription', {})}
                 {...form.getInputProps('aiEnabled', { type: 'checkbox' })}
               />
 
               <Select
-                label='AI provider'
-                data={Object.entries(providerPresets).map(([value, preset]) => ({
-                  value,
-                  label: preset.label,
-                }))}
+                label={tExt('settings.provider', {})}
+                data={providerOptions}
                 value={form.values.aiProvider}
                 onChange={(value) => {
                   if (!value) return;
@@ -201,24 +207,26 @@ export default function ConfigurationPage() {
               />
 
               <TextInput
-                label='Provider base URL'
-                description={providerPresets[form.values.aiProvider].description}
+                label={tExt('settings.baseUrl', {})}
+                description={providerDescription[form.values.aiProvider]}
                 placeholder={providerPresets[form.values.aiProvider].baseUrl}
                 type='url'
                 {...form.getInputProps('aiBaseUrl')}
               />
 
               <TextInput
-                label='Model'
+                label={tExt('settings.model', {})}
                 placeholder={providerPresets[form.values.aiProvider].model}
                 {...form.getInputProps('aiModel')}
               />
 
               <Group align='flex-end' gap='xs' wrap='nowrap'>
                 <Select
-                  label='Available models'
+                  label={tExt('settings.availableModels', {})}
                   placeholder={
-                    availableModels.length > 0 ? 'Choose a model' : 'Load models from the provider'
+                    availableModels.length > 0
+                      ? tExt('settings.chooseModel', {})
+                      : tExt('settings.loadModelsFirst', {})
                   }
                   data={availableModels}
                   value={availableModels.includes(form.values.aiModel) ? form.values.aiModel : null}
@@ -227,7 +235,7 @@ export default function ConfigurationPage() {
                   }}
                   searchable
                   clearable
-                  nothingFoundMessage='No matching models'
+                  nothingFoundMessage={tExt('settings.noMatchingModels', {})}
                   style={{ flex: 1 }}
                 />
                 <Button
@@ -241,34 +249,36 @@ export default function ConfigurationPage() {
                   }
                   onClick={() => void loadModels()}
                 >
-                  Load models
+                  {tExt('settings.loadModels', {})}
                 </Button>
               </Group>
 
               <PasswordInput
-                label='Provider API key'
+                label={tPanel('common.form.apiKey', {})}
                 description={
                   apiKeyConfigured
-                    ? 'A key is stored securely. Leave this blank to keep it unchanged.'
+                    ? tExt('settings.keepStoredKey', {})
                     : form.values.aiProvider === 'ollama'
-                      ? 'Optional for a local Ollama endpoint.'
-                      : 'The API key is encrypted in the Panel settings database.'
+                      ? tExt('settings.optionalOllamaKey', {})
+                      : tExt('settings.encryptedKey', {})
                 }
                 leftSection={<FontAwesomeIcon icon={faLock} aria-hidden='true' />}
                 autoComplete='new-password'
-                placeholder={apiKeyConfigured ? '••••••••••••••••' : 'Enter provider API key'}
+                placeholder={
+                  apiKeyConfigured ? '••••••••••••••••' : tExt('settings.enterApiKey', {})
+                }
                 {...form.getInputProps('aiApiKey')}
               />
 
               <Checkbox
-                label='Remove the stored API key'
+                label={tExt('settings.removeStoredKey', {})}
                 disabled={!apiKeyConfigured}
                 {...form.getInputProps('clearApiKey', { type: 'checkbox' })}
               />
 
               <Textarea
-                label='System prompt'
-                description='This instruction is sent before the recent messages in every AI conversation.'
+                label={tExt('settings.systemPrompt', {})}
+                description={tExt('settings.systemPromptDescription', {})}
                 minRows={3}
                 maxRows={8}
                 autosize
@@ -278,14 +288,14 @@ export default function ConfigurationPage() {
               {!apiKeyConfigured &&
                 form.values.aiEnabled &&
                 form.values.aiProvider !== 'ollama' && (
-                <Alert color='yellow' title='API key required'>
-                  Save a provider API key before users can start an AI conversation.
+                <Alert color='yellow' title={tExt('settings.apiKeyRequired', {})}>
+                  {tExt('settings.apiKeyRequiredDescription', {})}
                 </Alert>
               )}
 
               <Group justify='flex-end'>
                 <Button type='submit' loading={saving} disabled={!form.isValid()}>
-                  Save settings
+                  {tPanel('common.button.save', {})}
                 </Button>
               </Group>
             </Stack>
