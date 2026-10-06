@@ -28,22 +28,19 @@ After `9.10.10`, the next version is `10.0.0`; the major component can continue 
 
 ## GitHub release and `.c7s.zip`
 
-The `.github/workflows/release.yml` workflow first checks the Rust backend and frontend against Panel releases 1.2.3 and 1.2.4 on isolated GitHub runners. A failed preflight blocks packaging and publication. After both builds pass, it runs when a `v*` tag is pushed, verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release. It also supports manual runs: if the requested tag exists, the workflow checks out and packages that tag; if it does not exist, it packages the selected branch and the release step creates the tag on that commit.
+The `.github/workflows/release.yml` workflow automatically checks pushes to `main` and `master`. When the Cargo and frontend versions match and the corresponding tag does not already exist, it builds against Panel releases 1.2.3 and 1.2.4 on isolated GitHub runners. A failed preflight blocks packaging and publication. After both builds pass, it creates the version tag and a GitHub Release with `com_calagopus_chat.c7s.zip`. Pushes of `v*` tags and manual runs are also supported.
 
-Before creating a tag:
+For an automatic release:
 
 1. Run the official pre-export checks from a matching Calagopus Panel checkout (Rust formatting/linting and the frontend formatting/build checks).
-2. Update the versions listed above and commit the changes.
-3. Push the matching tag, for example:
-
-   ```bash
-   git tag v0.1.1
-   git push origin v0.1.1
-   ```
+2. Update both package version fields to the same unused version and commit the changes.
+3. Push the commit to `main` or `master`. The workflow derives the `vMAJOR.MINOR.PATCH` tag and creates the GitHub Release after preflight succeeds. A regular code push without a version bump will not create a release.
 
 4. Check the repository's **Actions** tab. When the workflow succeeds, download the `.c7s.zip` from the generated GitHub Release.
 
 To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For the current manifests, that tag is `v0.1.1`.
+
+If an earlier failed run already left a tag pointing at a commit with the wrong package version, remove and recreate that tag only if no GitHub Release was published for it. Never move or reuse a tag for a published release; bump to the next version instead.
 
 The archive layout must have `Metadata.toml` at its root, Rust sources and `Cargo.toml` under `backend/`, frontend sources and `package.json` under `frontend/`, and SQL migrations under `migrations/`. Do not include the Panel-generated `frontend/tsconfig.json`, `node_modules`, or an extra enclosing `com_calagopus_chat/` directory.
 

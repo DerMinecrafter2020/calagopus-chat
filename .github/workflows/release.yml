@@ -2,6 +2,9 @@ name: Release Calagopus Chat
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - 'v*'
   workflow_dispatch:
@@ -15,9 +18,82 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      should_release: ${{ steps.resolve.outputs.should_release }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Resolve version and decide whether to release
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import tomllib
+
+          extension = "backend-extensions/com_calagopus_chat"
+          with open(f"{extension}/Cargo.toml", "rb") as manifest_file:
+              cargo_version = tomllib.load(manifest_file)["package"]["version"]
+          with open(f"{extension}/frontend/package.json", encoding="utf-8") as package_file:
+              frontend_version = json.load(package_file)["version"]
+
+          if cargo_version != frontend_version:
+              raise SystemExit(
+                  f"Cargo.toml version {cargo_version} must match "
+                  f"frontend/package.json version {frontend_version}"
+              )
+
+          event_name = os.environ["EVENT_NAME"]
+          ref_type = os.environ.get("REF_TYPE", "")
+          ref_name = os.environ["REF_NAME"]
+          if event_name == "workflow_dispatch":
+              release_tag = os.environ["INPUT_TAG"]
+          elif ref_type == "tag":
+              release_tag = ref_name
+          else:
+              release_tag = f"v{cargo_version}"
+
+          match = re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", release_tag)
+          if match is None or ".".join(match.groups()) != cargo_version:
+              raise SystemExit(
+                  f"Release tag {release_tag!r} must match package version {cargo_version}"
+              )
+
+          should_release = True
+          if event_name == "push" and ref_type == "branch":
+              tag_exists = subprocess.run(
+                  ["git", "ls-remote", "--exit-code", "--tags", "origin", f"refs/tags/{release_tag}"],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              ).returncode == 0
+              if tag_exists:
+                  should_release = False
+                  print(f"{release_tag} already exists; no duplicate release will be created.")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"release_tag={release_tag}\n")
+              output.write(f"should_release={str(should_release).lower()}\n")
+          PY
+
   preflight:
     name: Build check against Panel ${{ matrix.panel_ref }}
     runs-on: ubuntu-latest
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -53,7 +129,7 @@ jobs:
 
       - name: Validate release tag and package versions before building
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           python - <<'PY'
           import json
@@ -128,7 +204,8 @@ jobs:
   release:
     name: Package and publish extension
     runs-on: ubuntu-latest
-    needs: preflight
+    needs: [prepare, preflight]
+    if: needs.prepare.outputs.should_release == 'true'
 
     steps:
       - name: Check out source
@@ -162,7 +239,7 @@ jobs:
 
       - name: Validate release tag and package versions
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           python - <<'PY'
           import json
@@ -256,8 +333,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
-          name: Calagopus Chat ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: Calagopus Chat ${{ needs.prepare.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: com_calagopus_chat.c7s.zip
