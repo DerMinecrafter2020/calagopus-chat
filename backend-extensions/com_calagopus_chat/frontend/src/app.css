@@ -204,13 +204,25 @@
 .calagopus-chat-composer {
   display: flex;
   flex: 0 0 auto;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 7px;
   padding: 10px;
   border-top: 1px solid var(--mantine-color-default-border);
 }
 
-.calagopus-chat-composer > .mantine-Textarea-root {
+.calagopus-chat-composer-options {
+  width: 100%;
+  min-height: 24px;
+}
+
+.calagopus-chat-composer-row {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.calagopus-chat-composer-row > .mantine-Textarea-root {
   flex: 1 1 auto;
   min-width: 0;
 }

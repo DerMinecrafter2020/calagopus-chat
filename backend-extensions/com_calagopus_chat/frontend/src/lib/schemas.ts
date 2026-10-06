@@ -87,6 +87,16 @@ export const adminSettingsResponseSchema = z.object({
   settings: adminSettingsSchema,
 });
 
+export const providerModelsRequestSchema = z.object({
+  aiProvider: aiProviderSchema,
+  aiBaseUrl: z.string().url().max(512),
+  aiApiKey: z.string().max(4096),
+});
+
+export const providerModelsResponseSchema = z.object({
+  models: z.array(z.string()),
+});
+
 export const updateAdminSettingsSchema = z.object({
   aiEnabled: z.boolean(),
   aiProvider: aiProviderSchema,
@@ -102,4 +112,5 @@ export type ConversationKind = z.infer<typeof conversationKindSchema>;
 export type AiProvider = z.infer<typeof aiProviderSchema>;
 export type ChatMessage = z.infer<typeof messageSchema>;
 export type ChatUser = z.infer<typeof userSummarySchema>;
+export type ProviderModelsRequest = z.infer<typeof providerModelsRequestSchema>;
 export type UpdateAdminSettings = z.infer<typeof updateAdminSettingsSchema>;

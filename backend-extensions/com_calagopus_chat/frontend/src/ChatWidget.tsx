@@ -18,6 +18,7 @@ import {
   Loader,
   Paper,
   Stack,
+  Switch,
   Text,
   TextInput,
   Textarea,
@@ -25,7 +26,9 @@ import {
 } from '@mantine/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { z } from 'zod';
 import { httpErrorToHuman } from '@/api/axios.ts';
+import { useUserSetting } from '@/lib/userSettings.ts';
 import { useAuth } from '@/providers/AuthProvider.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import createConversation from './api/createConversation.ts';
@@ -58,6 +61,11 @@ function formatTime(date: Date): string {
 export default function ChatWidget() {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const [sendOnEnter, setSendOnEnter] = useUserSetting(
+    'com.calagopus.chat::send_on_enter',
+    z.boolean(),
+    true,
+  );
   const [expanded, setExpanded] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [aiAvailable, setAiAvailable] = useState(false);
@@ -370,35 +378,51 @@ export default function ChatWidget() {
                 )}
               </div>
               <form className='calagopus-chat-composer' onSubmit={send}>
-                <Textarea
-                  aria-label='Write a message'
-                  placeholder='Write a message…'
-                  value={draft}
-                  onChange={(event) => setDraft(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  minRows={1}
-                  maxRows={4}
-                  autosize
-                  maxLength={4000}
-                  disabled={sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
-                />
-                <Tooltip label='Send message (Ctrl/⌘ + Enter)'>
-                  <ActionIcon
-                    type='submit'
-                    size='lg'
-                    variant='filled'
-                    aria-label='Send message'
-                    disabled={!draft.trim() || sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
-                    loading={sending}
-                  >
-                    <FontAwesomeIcon icon={faPaperPlane} aria-hidden='true' />
-                  </ActionIcon>
-                </Tooltip>
+                <Group className='calagopus-chat-composer-options' justify='space-between' gap='xs'>
+                  <Switch
+                    size='xs'
+                    label='Enter sends'
+                    checked={sendOnEnter}
+                    onChange={(event) => setSendOnEnter(event.currentTarget.checked)}
+                  />
+                  <Text size='xs' c='dimmed'>
+                    {sendOnEnter ? 'Shift+Enter for a new line' : 'Ctrl/⌘+Enter to send'}
+                  </Text>
+                </Group>
+                <div className='calagopus-chat-composer-row'>
+                  <Textarea
+                    aria-label='Write a message'
+                    placeholder='Write a message…'
+                    value={draft}
+                    onChange={(event) => setDraft(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      const sendShortcut = sendOnEnter
+                        ? event.key === 'Enter' && !event.shiftKey
+                        : event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.shiftKey;
+                      if (sendShortcut) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    minRows={1}
+                    maxRows={4}
+                    autosize
+                    maxLength={4000}
+                    disabled={sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
+                  />
+                  <Tooltip label={sendOnEnter ? 'Send message (Enter)' : 'Send message (Ctrl/⌘ + Enter)'}>
+                    <ActionIcon
+                      type='submit'
+                      size='lg'
+                      variant='filled'
+                      aria-label='Send message'
+                      disabled={!draft.trim() || sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
+                      loading={sending}
+                    >
+                      <FontAwesomeIcon icon={faPaperPlane} aria-hidden='true' />
+                    </ActionIcon>
+                  </Tooltip>
+                </div>
               </form>
               {activeConversation?.kind === 'ai' && !aiAvailable && (
                 <Text className='calagopus-chat-ai-notice' size='xs' c='dimmed'>

@@ -8,6 +8,8 @@ use shared::{
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
+mod models;
+
 mod get {
     use super::*;
 
@@ -154,5 +156,6 @@ pub fn router(state: &shared::State) -> OpenApiRouter<shared::State> {
     OpenApiRouter::new()
         .routes(routes!(get::route))
         .routes(routes!(put::route))
+        .nest("/models", models::router(state))
         .with_state(state.clone())
 }

@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import { httpErrorToHuman } from '@/api/axios.ts';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import getAdminSettings from './api/getAdminSettings.ts';
+import getProviderModels from './api/getProviderModels.ts';
 import updateAdminSettings from './api/updateAdminSettings.ts';
 import {
   updateAdminSettingsSchema,
@@ -65,6 +66,8 @@ export default function ConfigurationPage() {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
 
   const form = useForm<UpdateAdminSettings>({
@@ -125,6 +128,28 @@ export default function ConfigurationPage() {
     }
   };
 
+  const loadModels = async () => {
+    setLoadingModels(true);
+    try {
+      const response = await getProviderModels({
+        aiProvider: form.values.aiProvider,
+        aiBaseUrl: form.values.aiBaseUrl,
+        aiApiKey: form.values.aiApiKey,
+      });
+      setAvailableModels(response.models);
+      addToast(
+        response.models.length > 0
+          ? `Loaded ${response.models.length} models.`
+          : 'The provider returned no models.',
+        response.models.length > 0 ? 'success' : 'warning',
+      );
+    } catch (error) {
+      addToast(httpErrorToHuman(error), 'error');
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
   if (loading) {
     return (
       <Group justify='center' py='xl'>
@@ -170,6 +195,7 @@ export default function ConfigurationPage() {
                   form.setFieldValue('aiProvider', provider);
                   form.setFieldValue('aiBaseUrl', providerPresets[provider].baseUrl);
                   form.setFieldValue('aiModel', providerPresets[provider].model);
+                  setAvailableModels([]);
                 }}
                 allowDeselect={false}
               />
@@ -187,6 +213,37 @@ export default function ConfigurationPage() {
                 placeholder={providerPresets[form.values.aiProvider].model}
                 {...form.getInputProps('aiModel')}
               />
+
+              <Group align='flex-end' gap='xs' wrap='nowrap'>
+                <Select
+                  label='Available models'
+                  placeholder={
+                    availableModels.length > 0 ? 'Choose a model' : 'Load models from the provider'
+                  }
+                  data={availableModels}
+                  value={availableModels.includes(form.values.aiModel) ? form.values.aiModel : null}
+                  onChange={(model) => {
+                    if (model) form.setFieldValue('aiModel', model);
+                  }}
+                  searchable
+                  clearable
+                  nothingFoundMessage='No matching models'
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  type='button'
+                  variant='default'
+                  loading={loadingModels}
+                  disabled={
+                    form.values.aiProvider !== 'ollama' &&
+                    !apiKeyConfigured &&
+                    !form.values.aiApiKey.trim()
+                  }
+                  onClick={() => void loadModels()}
+                >
+                  Load models
+                </Button>
+              </Group>
 
               <PasswordInput
                 label='Provider API key'

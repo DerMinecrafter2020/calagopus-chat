@@ -8,6 +8,7 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 - Direct messages and named group chats between active panel users.
 - Conversation history and unread message counts persisted in PostgreSQL.
 - AI chats with OpenAI-compatible providers (including OpenRouter and custom endpoints), Anthropic, Google Gemini, and Ollama.
+- Admin model discovery with a searchable model selector, plus a per-user Enter-to-send preference.
 - An extension configuration page under **Admin → Extensions → Calagopus Chat** for the AI URL, model, API key, system prompt, and enable switch.
 - API keys are stored through Calagopus's encrypted extension-settings API; chat content and API keys are not written to activity-log payloads.
 - Mantine components and theme CSS variables keep the widget aligned with the active light/dark theme and custom panel palettes.
@@ -45,8 +46,9 @@ After the workflow succeeds, download the `.c7s.zip` file from the GitHub Releas
 1. Install and enable **Calagopus Chat** in the Panel.
 2. Open **Admin → Extensions → Calagopus Chat → Configure**.
 3. Choose OpenAI-compatible, OpenRouter, Anthropic, Google Gemini, or Ollama.
-4. Enter the provider’s base URL and model. Add its API key; Ollama can run without one.
-5. Adjust the system prompt and enable AI chat.
+4. Enter the provider’s base URL and API key; Ollama can run without one.
+5. Load the provider’s available models and select one, or enter a model ID manually.
+6. Adjust the system prompt and enable AI chat.
 
 OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. The API key is never returned by the admin settings endpoint; leave its field blank to preserve the saved key or select **Remove the stored API key** to clear it.
 
