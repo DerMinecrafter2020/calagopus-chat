@@ -32,7 +32,7 @@ The extension targets Calagopus Panel `>=1.2.5`. Its frontend uses the official 
 
 ## GitHub releases
 
-The GitHub Actions workflow in `.github/workflows/release.yml` creates a GitHub Release with `com_calagopus_chat.c7s.zip` whenever a `vMAJOR.MINOR.PATCH` tag is pushed. It verifies that the tag matches the versions in both `Cargo.toml` and `frontend/package.json`, then packages the root `Metadata.toml`, `backend/`, `frontend/`, and `migrations/` entries in the archive layout Calagopus expects.
+The GitHub Actions workflow in `.github/workflows/release.yml` creates a GitHub Release with `com_calagopus_chat.c7s.zip` whenever a `vMAJOR.MINOR.PATCH` tag is pushed. It verifies that the tag matches the versions in both `Cargo.toml` and `frontend/package.json`, then packages the root `Metadata.toml`, `backend/`, `frontend/`, and `migrations/` entries in the archive layout Calagopus expects. You can also run it manually from the Actions tab by entering an existing version tag.
 
 To publish a release, update both package versions, commit the change, and push the matching tag. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md). For example:
 

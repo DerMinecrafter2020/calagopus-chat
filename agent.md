@@ -28,7 +28,7 @@ After `9.10.10`, the next version is `10.0.0`; the major component can continue 
 
 ## GitHub release and `.c7s.zip`
 
-The `.github/workflows/release.yml` workflow runs when a `v*` tag is pushed. It verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release.
+The `.github/workflows/release.yml` workflow runs when a `v*` tag is pushed. It verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release. It also supports manual runs from GitHub Actions when you provide an existing version tag.
 
 Before creating a tag:
 
