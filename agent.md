@@ -16,10 +16,10 @@ Use a three-part version in `MAJOR.MINOR.PATCH` order. Keep these values identic
 - `backend-extensions/com_calagopus_chat/frontend/package.json` → `version`
 - The Git tag, prefixed with `v` (for example, `v0.1.1`)
 
-Start from the current version, `0.1.0`, and count from the rightmost component. Increment that component through `10`; when it reaches `10`, reset it to `0` and increment the component to its left. Apply the same rollover to the middle component. Examples:
+Start from the current version, `0.1.1`, and count from the rightmost component. Increment that component through `10`; when it reaches `10`, reset it to `0` and increment the component to its left. Apply the same rollover to the middle component. Examples:
 
 ```text
-0.1.0 → 0.1.1 → … → 0.1.10 → 0.2.0
+0.1.1 → 0.1.2 → … → 0.1.10 → 0.2.0
 0.2.10 → 0.3.0
 0.10.10 → 1.0.0
 ```
@@ -43,7 +43,7 @@ Before creating a tag:
 
 4. Check the repository's **Actions** tab. When the workflow succeeds, download the `.c7s.zip` from the generated GitHub Release.
 
-To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For a first release with the current manifests, that tag is `v0.1.0`.
+To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For the current manifests, that tag is `v0.1.1`.
 
 The archive layout must have `Metadata.toml` at its root, Rust sources and `Cargo.toml` under `backend/`, frontend sources and `package.json` under `frontend/`, and SQL migrations under `migrations/`. Do not include the Panel-generated `frontend/tsconfig.json`, `node_modules`, or an extra enclosing `com_calagopus_chat/` directory.
 
