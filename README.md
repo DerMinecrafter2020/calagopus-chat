@@ -4,12 +4,13 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 
 ## Features
 
-- A compact bottom-right chat bar when minimized and a small conversation window when expanded.
+- A compact bottom-right chat bar when minimized and a responsive conversation window that adapts to mobile, tablet, and desktop screens.
 - Direct messages and named group chats between active panel users.
 - Conversation history and unread message counts persisted in PostgreSQL.
 - AI chats with OpenAI-compatible providers (including OpenRouter and custom endpoints), Anthropic, Google Gemini, and Ollama.
+- Provider-reported input/output token totals for AI requests made by Calagopus Chat.
 - Admin model discovery with a searchable model selector, plus a per-user Enter-to-send preference.
-- An extension configuration page under **Admin → Extensions → Calagopus Chat** for the AI URL, model, API key, system prompt, and enable switch.
+- A **Chat settings** page in the admin sidebar (also available from **Admin → Extensions → Calagopus Chat**) for the AI URL, model, API key, system prompt, token-usage totals, and changelog.
 - API keys are stored through Calagopus's encrypted extension-settings API; chat content and API keys are not written to activity-log payloads.
 - Mantine components and theme CSS variables keep the widget aligned with the active light/dark theme and custom panel palettes.
 - UI strings use Calagopus's translation system, with English fallbacks when a localized extension string is unavailable.
@@ -30,7 +31,7 @@ cd ..
 cargo build --profile heavy-release
 ```
 
-The extension targets Calagopus Panel `>=1.2.3`. Its frontend uses the official global page slot, frontend API helpers, and extension configuration page; the backend uses Rust routes, extension settings, permissions, and SQL migrations. The extension API and required dependencies are available in the official 1.2.3 release.
+The extension targets Calagopus Panel `>=1.2.3`. Its frontend uses the official global page slot, an admin sidebar route, frontend API helpers, and the extension card configuration page; the backend uses Rust routes, encrypted extension settings, permissions, and SQL migrations. The extension API and required dependencies are available in the official 1.2.3 release.
 
 ## GitHub releases
 
@@ -38,20 +39,20 @@ The GitHub Actions workflow in `.github/workflows/release.yml` automatically che
 
 To publish automatically, update both package versions to the same unused version, commit the change, and push it to `main` or `master`. The runner derives the matching version tag and creates the release after the preflight builds pass. Ordinary code pushes without a version bump do not create duplicate releases. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md).
 
-For the current `0.1.4` version, a push to the default branch will create `v0.1.4` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
+For the current `0.1.5` version, a push to the default branch will create `v0.1.5` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
 
 After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
 
 ## Configure AI
 
 1. Install and enable **Calagopus Chat** in the Panel.
-2. Open **Admin → Extensions → Calagopus Chat → Configure**.
+2. Open **Admin → Chat settings** from the sidebar, or **Admin → Extensions → Calagopus Chat → Configure**.
 3. Choose OpenAI-compatible, OpenRouter, Anthropic, Google Gemini, or Ollama.
 4. Enter the provider’s base URL and API key; Ollama can run without one.
 5. Load the provider’s available models and select one, or enter a model ID manually.
 6. Adjust the system prompt and enable AI chat.
 
-OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. The API key is never returned by the admin settings endpoint; leave its field blank to preserve the saved key or select **Remove the stored API key** to clear it.
+OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. Token totals reflect only Calagopus Chat calls, using usage fields reported by the configured provider; they are not account-wide billing totals. Providers that omit usage details are excluded. The API key is never returned by the admin settings endpoint; leave its field blank to preserve the saved key or select **Remove the stored API key** to clear it.
 
 ## Official documentation
 

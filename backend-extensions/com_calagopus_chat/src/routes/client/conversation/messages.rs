@@ -105,6 +105,12 @@ mod post {
         ai_message_uuid: Option<uuid::Uuid>,
     }
 
+    struct AiReply {
+        content: String,
+        input_tokens: Option<i64>,
+        output_tokens: Option<i64>,
+    }
+
     #[utoipa::path(post, path = "/", params(
         ("conversation" = uuid::Uuid, Path, description = "The conversation ID."),
     ), responses(
@@ -195,17 +201,24 @@ mod post {
                 }
             };
 
+            let AiReply {
+                content,
+                input_tokens,
+                output_tokens,
+            } = answer;
             let ai_message_uuid = uuid::Uuid::new_v4();
             sqlx::query(
                 r#"
                 INSERT INTO com_calagopus_chat_messages
-                    (uuid, conversation_uuid, sender_uuid, sender_kind, content)
-                VALUES ($1, $2, NULL, 'ai', $3)
+                    (uuid, conversation_uuid, sender_uuid, sender_kind, content, input_tokens, output_tokens)
+                VALUES ($1, $2, NULL, 'ai', $3, $4, $5)
                 "#,
             )
             .bind(ai_message_uuid)
             .bind(conversation_uuid)
-            .bind(answer)
+            .bind(content)
+            .bind(input_tokens)
+            .bind(output_tokens)
             .execute(state.database.write())
             .await?;
 
@@ -237,7 +250,7 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         conversation_uuid: uuid::Uuid,
-    ) -> Result<String, anyhow::Error> {
+    ) -> Result<AiReply, anyhow::Error> {
         let rows = sqlx::query(
             r#"
             SELECT sender_kind, content
@@ -262,7 +275,7 @@ mod post {
             .collect::<Result<Vec<_>, sqlx::Error>>()?;
         history.reverse();
 
-        let answer = match settings.ai_provider.as_str() {
+        let mut answer = match settings.ai_provider.as_str() {
             "openai_compatible" | "openrouter" | "ollama" => {
                 generate_openai_compatible_reply(state, settings, &history).await?
             }
@@ -270,12 +283,19 @@ mod post {
             "google_gemini" => generate_gemini_reply(state, settings, &history).await?,
             provider => return Err(anyhow::anyhow!("unsupported AI provider `{provider}`")),
         };
-        let answer = answer.trim();
-        if answer.is_empty() {
+        let content = answer.content.trim().chars().take(8000).collect::<String>();
+        if content.is_empty() {
             return Err(anyhow::anyhow!("AI provider returned an empty answer"));
         }
+        answer.content = content;
 
-        Ok(answer.chars().take(8000).collect())
+        Ok(answer)
+    }
+
+    fn reported_token_count(value: Option<&serde_json::Value>) -> Option<i64> {
+        value?
+            .as_u64()
+            .and_then(|count| i64::try_from(count).ok())
     }
 
     fn openai_messages(
@@ -313,7 +333,7 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
-    ) -> Result<String, anyhow::Error> {
+    ) -> Result<AiReply, anyhow::Error> {
         let endpoint = format!(
             "{}/chat/completions",
             settings.ai_base_url.trim_end_matches('/')
@@ -338,15 +358,22 @@ mod post {
             .pointer("/choices/0/message/content")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("AI provider returned no chat-completion text"))?;
+        let usage = response.get("usage");
 
-        Ok(content.to_string())
+        Ok(AiReply {
+            content: content.to_string(),
+            input_tokens: reported_token_count(usage.and_then(|usage| usage.get("prompt_tokens"))),
+            output_tokens: reported_token_count(
+                usage.and_then(|usage| usage.get("completion_tokens")),
+            ),
+        })
     }
 
     async fn generate_anthropic_reply(
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
-    ) -> Result<String, anyhow::Error> {
+    ) -> Result<AiReply, anyhow::Error> {
         let messages = history
             .iter()
             .map(|(sender_kind, content)| {
@@ -382,15 +409,20 @@ mod post {
             .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
             .collect::<Vec<_>>()
             .join("");
+        let usage = response.get("usage");
 
-        Ok(answer)
+        Ok(AiReply {
+            content: answer,
+            input_tokens: reported_token_count(usage.and_then(|usage| usage.get("input_tokens"))),
+            output_tokens: reported_token_count(usage.and_then(|usage| usage.get("output_tokens"))),
+        })
     }
 
     async fn generate_gemini_reply(
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
-    ) -> Result<String, anyhow::Error> {
+    ) -> Result<AiReply, anyhow::Error> {
         let contents = history
             .iter()
             .map(|(sender_kind, content)| {
@@ -429,8 +461,15 @@ mod post {
             .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
             .collect::<Vec<_>>()
             .join("");
+        let usage = response.get("usageMetadata");
 
-        Ok(answer)
+        Ok(AiReply {
+            content: answer,
+            input_tokens: reported_token_count(usage.and_then(|usage| usage.get("promptTokenCount"))),
+            output_tokens: reported_token_count(
+                usage.and_then(|usage| usage.get("candidatesTokenCount")),
+            ),
+        })
     }
 }
 

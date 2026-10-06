@@ -1,4 +1,4 @@
-import { faLock, faRobot } from '@fortawesome/free-solid-svg-icons';
+import { faChartColumn, faLock, faRobot } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { zod4Resolver } from 'mantine-form-zod-resolver';
 import { useForm } from '@mantine/form';
@@ -8,9 +8,11 @@ import {
   Checkbox,
   Group,
   Loader,
+  List,
   Paper,
   PasswordInput,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -24,12 +26,31 @@ import { useToast } from '@/providers/ToastProvider.tsx';
 import getAdminSettings from './api/getAdminSettings.ts';
 import getProviderModels from './api/getProviderModels.ts';
 import updateAdminSettings from './api/updateAdminSettings.ts';
+import CHANGELOG from './CHANGELOG.md?raw';
 import {
   updateAdminSettingsSchema,
   type AiProvider,
+  type TokenUsage,
   type UpdateAdminSettings,
 } from './lib/schemas.ts';
 import { useExtTranslations } from './translations.ts';
+
+const changelogEntries = CHANGELOG.split(/^##\s+/m)
+  .slice(1)
+  .map((section) => {
+    const [heading = '', ...lines] = section.trim().split(/\r?\n/);
+    const [, version, date = ''] =
+      heading.match(/^\[?([^\]\s]+)\]?(?:\s*[—–-]\s*(.*))?$/) ?? [];
+
+    return {
+      version: version ?? heading,
+      date,
+      changes: lines
+        .filter((line) => line.trimStart().startsWith('- '))
+        .map((line) => line.trim().slice(2)),
+    };
+  })
+  .filter((entry) => entry.changes.length > 0);
 
 const providerPresets: Record<AiProvider, { baseUrl: string; model: string }> = {
   openai_compatible: {
@@ -63,6 +84,11 @@ export default function ConfigurationPage() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
+    inputTokens: 0,
+    outputTokens: 0,
+    reportedResponses: 0,
+  });
 
   const providerOptions = [
     { value: 'openai_compatible', label: tExt('settings.providers.openaiCompatible', {}) },
@@ -97,8 +123,9 @@ export default function ConfigurationPage() {
   useEffect(() => {
     let active = true;
     getAdminSettings()
-      .then(({ settings }) => {
+      .then(({ settings, tokenUsage: usage }) => {
         if (!active) return;
+        setTokenUsage(usage);
         form.setValues({
           aiEnabled: settings.aiEnabled,
           aiProvider: settings.aiProvider,
@@ -171,7 +198,7 @@ export default function ConfigurationPage() {
 
   return (
     <Stack gap='md' className='calagopus-chat-settings'>
-      <Paper withBorder radius='md' p='lg'>
+      <Paper withBorder radius='md' p='lg' className='calagopus-chat-settings-card'>
         <Stack gap='md'>
           <Group gap='sm' align='flex-start'>
             <FontAwesomeIcon icon={faRobot} aria-hidden='true' />
@@ -191,67 +218,76 @@ export default function ConfigurationPage() {
                 {...form.getInputProps('aiEnabled', { type: 'checkbox' })}
               />
 
-              <Select
-                label={tExt('settings.provider', {})}
-                data={providerOptions}
-                value={form.values.aiProvider}
-                onChange={(value) => {
-                  if (!value) return;
-                  const provider = value as AiProvider;
-                  form.setFieldValue('aiProvider', provider);
-                  form.setFieldValue('aiBaseUrl', providerPresets[provider].baseUrl);
-                  form.setFieldValue('aiModel', providerPresets[provider].model);
-                  setAvailableModels([]);
-                }}
-                allowDeselect={false}
-              />
-
-              <TextInput
-                label={tExt('settings.baseUrl', {})}
-                description={providerDescription[form.values.aiProvider]}
-                placeholder={providerPresets[form.values.aiProvider].baseUrl}
-                type='url'
-                {...form.getInputProps('aiBaseUrl')}
-              />
-
-              <TextInput
-                label={tExt('settings.model', {})}
-                placeholder={providerPresets[form.values.aiProvider].model}
-                {...form.getInputProps('aiModel')}
-              />
-
-              <Group align='flex-end' gap='xs' wrap='nowrap'>
+              <SimpleGrid cols={{ base: 1, md: 2 }} spacing='md'>
                 <Select
-                  label={tExt('settings.availableModels', {})}
-                  placeholder={
-                    availableModels.length > 0
-                      ? tExt('settings.chooseModel', {})
-                      : tExt('settings.loadModelsFirst', {})
-                  }
-                  data={availableModels}
-                  value={availableModels.includes(form.values.aiModel) ? form.values.aiModel : null}
-                  onChange={(model) => {
-                    if (model) form.setFieldValue('aiModel', model);
+                  label={tExt('settings.provider', {})}
+                  data={providerOptions}
+                  value={form.values.aiProvider}
+                  onChange={(value) => {
+                    if (!value) return;
+                    const provider = value as AiProvider;
+                    form.setFieldValue('aiProvider', provider);
+                    form.setFieldValue('aiBaseUrl', providerPresets[provider].baseUrl);
+                    form.setFieldValue('aiModel', providerPresets[provider].model);
+                    setAvailableModels([]);
                   }}
-                  searchable
-                  clearable
-                  nothingFoundMessage={tExt('settings.noMatchingModels', {})}
-                  style={{ flex: 1 }}
+                  allowDeselect={false}
                 />
-                <Button
-                  type='button'
-                  variant='default'
-                  loading={loadingModels}
-                  disabled={
-                    form.values.aiProvider !== 'ollama' &&
-                    !apiKeyConfigured &&
-                    !form.values.aiApiKey.trim()
-                  }
-                  onClick={() => void loadModels()}
+
+                <TextInput
+                  label={tExt('settings.baseUrl', {})}
+                  description={providerDescription[form.values.aiProvider]}
+                  placeholder={providerPresets[form.values.aiProvider].baseUrl}
+                  type='url'
+                  {...form.getInputProps('aiBaseUrl')}
+                />
+              </SimpleGrid>
+
+              <SimpleGrid cols={{ base: 1, md: 2 }} spacing='md'>
+                <TextInput
+                  label={tExt('settings.model', {})}
+                  placeholder={providerPresets[form.values.aiProvider].model}
+                  {...form.getInputProps('aiModel')}
+                />
+
+                <Group
+                  className='calagopus-chat-model-picker'
+                  align='flex-end'
+                  gap='xs'
+                  wrap='wrap'
                 >
-                  {tExt('settings.loadModels', {})}
-                </Button>
-              </Group>
+                  <Select
+                    label={tExt('settings.availableModels', {})}
+                    placeholder={
+                      availableModels.length > 0
+                        ? tExt('settings.chooseModel', {})
+                        : tExt('settings.loadModelsFirst', {})
+                    }
+                    data={availableModels}
+                    value={availableModels.includes(form.values.aiModel) ? form.values.aiModel : null}
+                    onChange={(model) => {
+                      if (model) form.setFieldValue('aiModel', model);
+                    }}
+                    searchable
+                    clearable
+                    nothingFoundMessage={tExt('settings.noMatchingModels', {})}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    type='button'
+                    variant='default'
+                    loading={loadingModels}
+                    disabled={
+                      form.values.aiProvider !== 'ollama' &&
+                      !apiKeyConfigured &&
+                      !form.values.aiApiKey.trim()
+                    }
+                    onClick={() => void loadModels()}
+                  >
+                    {tExt('settings.loadModels', {})}
+                  </Button>
+                </Group>
+              </SimpleGrid>
 
               <PasswordInput
                 label={tPanel('common.form.apiKey', {})}
@@ -302,6 +338,77 @@ export default function ConfigurationPage() {
           </form>
         </Stack>
       </Paper>
+
+      <Paper withBorder radius='md' p='lg' className='calagopus-chat-settings-card'>
+        <Stack gap='sm'>
+          <Group gap='sm' align='flex-start'>
+            <FontAwesomeIcon icon={faChartColumn} aria-hidden='true' />
+            <div>
+              <Text fw={700}>{tExt('settings.tokenUsageTitle', {})}</Text>
+              <Text size='sm' c='dimmed'>
+                {tExt('settings.tokenUsageDescription', {})}
+              </Text>
+            </div>
+          </Group>
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing='xs'>
+            <TokenUsageMetric
+              label={tExt('settings.inputTokens', {})}
+              value={tokenUsage.inputTokens}
+            />
+            <TokenUsageMetric
+              label={tExt('settings.outputTokens', {})}
+              value={tokenUsage.outputTokens}
+            />
+            <TokenUsageMetric
+              label={tExt('settings.totalTokens', {})}
+              value={tokenUsage.inputTokens + tokenUsage.outputTokens}
+            />
+          </SimpleGrid>
+          <Text size='xs' c='dimmed'>
+            {tExt('settings.tokenUsageResponses', { count: tokenUsage.reportedResponses })}
+          </Text>
+          <Text size='xs' c='dimmed'>
+            {tExt('settings.tokenUsageScope', {})}
+          </Text>
+        </Stack>
+      </Paper>
+
+      <Paper withBorder radius='md' p='lg' className='calagopus-chat-settings-card'>
+        <Stack gap='sm'>
+          <div>
+            <Text fw={700}>{tExt('settings.changelogTitle', {})}</Text>
+            <Text size='sm' c='dimmed'>
+              {tExt('settings.changelogDescription', {})}
+            </Text>
+          </div>
+          <Stack gap='md'>
+            {changelogEntries.map((entry) => (
+              <div className='calagopus-chat-changelog-entry' key={entry.version}>
+                <Group justify='space-between' gap='xs' align='baseline'>
+                  <Text fw={600}>{entry.version}</Text>
+                  {entry.date && <Text size='xs' c='dimmed'>{entry.date}</Text>}
+                </Group>
+                <List size='sm' spacing='xs' mt='xs'>
+                  {entry.changes.map((change, index) => (
+                    <List.Item key={`${entry.version}-${index}`}>{change}</List.Item>
+                  ))}
+                </List>
+              </div>
+            ))}
+          </Stack>
+        </Stack>
+      </Paper>
     </Stack>
+  );
+}
+
+function TokenUsageMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <Paper withBorder radius='sm' p='sm' className='calagopus-chat-token-metric'>
+      <Text size='xs' c='dimmed'>{label}</Text>
+      <Text fw={700} size='lg' style={{ fontVariantNumeric: 'tabular-nums' }}>
+        {Intl.NumberFormat().format(value)}
+      </Text>
+    </Paper>
   );
 }

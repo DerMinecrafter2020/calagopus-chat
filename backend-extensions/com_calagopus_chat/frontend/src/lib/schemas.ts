@@ -83,8 +83,15 @@ export const adminSettingsSchema = z.object({
   apiKeyConfigured: z.boolean(),
 });
 
+export const tokenUsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  reportedResponses: z.number().int().nonnegative(),
+});
+
 export const adminSettingsResponseSchema = z.object({
   settings: adminSettingsSchema,
+  tokenUsage: tokenUsageSchema,
 });
 
 export const providerModelsRequestSchema = z.object({
@@ -110,6 +117,7 @@ export const updateAdminSettingsSchema = z.object({
 export type Conversation = z.infer<typeof conversationSchema>;
 export type ConversationKind = z.infer<typeof conversationKindSchema>;
 export type AiProvider = z.infer<typeof aiProviderSchema>;
+export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type ChatMessage = z.infer<typeof messageSchema>;
 export type ChatUser = z.infer<typeof userSummarySchema>;
 export type ProviderModelsRequest = z.infer<typeof providerModelsRequestSchema>;

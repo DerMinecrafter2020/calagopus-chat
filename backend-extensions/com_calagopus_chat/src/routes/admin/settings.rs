@@ -12,6 +12,7 @@ mod models;
 
 mod get {
     use super::*;
+    use sqlx::Row;
 
     #[derive(ToSchema, Serialize)]
     struct SettingsResponse {
@@ -27,6 +28,14 @@ mod get {
     struct Response {
         #[schema(inline)]
         settings: SettingsResponse,
+        token_usage: TokenUsageResponse,
+    }
+
+    #[derive(ToSchema, Serialize)]
+    struct TokenUsageResponse {
+        input_tokens: i64,
+        output_tokens: i64,
+        reported_responses: i64,
     }
 
     #[utoipa::path(get, path = "/", responses(
@@ -39,6 +48,20 @@ mod get {
         permissions.has_admin_permission("extensions.manage")?;
 
         let settings = crate::settings::load(&state.0).await?;
+        let usage = sqlx::query(
+            r#"
+            SELECT
+                COALESCE(SUM(input_tokens), 0)::BIGINT AS input_tokens,
+                COALESCE(SUM(output_tokens), 0)::BIGINT AS output_tokens,
+                COUNT(*) FILTER (
+                    WHERE input_tokens IS NOT NULL OR output_tokens IS NOT NULL
+                ) AS reported_responses
+            FROM com_calagopus_chat_messages
+            WHERE sender_kind = 'ai'
+            "#,
+        )
+        .fetch_one(state.database.read())
+        .await?;
 
         ApiResponse::new_serialized(Response {
             settings: SettingsResponse {
@@ -48,6 +71,11 @@ mod get {
                 ai_model: settings.ai_model.to_string(),
                 ai_system_prompt: settings.ai_system_prompt.to_string(),
                 api_key_configured: !settings.ai_api_key.trim().is_empty(),
+            },
+            token_usage: TokenUsageResponse {
+                input_tokens: usage.try_get("input_tokens")?,
+                output_tokens: usage.try_get("output_tokens")?,
+                reported_responses: usage.try_get("reported_responses")?,
             },
         })
         .ok()

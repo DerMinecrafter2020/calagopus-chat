@@ -1,7 +1,9 @@
 .calagopus-chat-widget {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  right: 16px;
+  bottom: 16px;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
   z-index: 150;
   color: var(--mantine-color-text);
   font-family: var(--mantine-font-family);
@@ -11,7 +13,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 258px;
+  width: min(258px, calc(100vw - 32px));
   min-height: 56px;
   padding: 8px 12px;
   color: var(--mantine-color-text);
@@ -64,8 +66,9 @@
 .calagopus-chat-shell {
   display: flex;
   flex-direction: column;
-  width: min(370px, calc(100vw - 28px));
-  height: min(520px, calc(100dvh - 36px));
+  width: min(clamp(340px, 28vw, 460px), calc(100vw - 32px));
+  height: min(clamp(430px, 72dvh, 760px), calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
   overflow: hidden;
   color: var(--mantine-color-text);
   background: var(--mantine-color-body);
@@ -94,6 +97,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
 }
 
@@ -170,6 +174,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px;
 }
 
@@ -245,6 +250,7 @@
   flex: 1 1 auto;
   min-height: 80px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .calagopus-chat-user-avatar {
@@ -270,14 +276,81 @@
   white-space: nowrap;
 }
 
-@media (max-width: 480px) {
+@media (min-width: 1600px) {
+  .calagopus-chat-shell {
+    width: min(480px, calc(100vw - 48px));
+    height: min(820px, calc(100dvh - 48px));
+  }
+}
+
+@media (max-height: 520px) and (min-width: 521px) {
+  .calagopus-chat-shell {
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+}
+
+@media (max-width: 520px) {
   .calagopus-chat-widget {
-    right: 12px;
-    bottom: 12px;
+    right: 8px;
+    bottom: 8px;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .calagopus-chat-collapsed {
+    width: min(280px, calc(100vw - 16px));
   }
 
   .calagopus-chat-shell {
-    width: calc(100vw - 24px);
-    height: min(620px, calc(100dvh - 24px));
+    width: calc(100vw - 16px);
+    height: min(760px, calc(100dvh - 16px));
+    max-height: calc(100dvh - 16px);
+    border-radius: var(--mantine-radius-md);
   }
+
+  .calagopus-chat-settings {
+    padding: 8px;
+  }
+
+  .calagopus-chat-settings-card {
+    padding: var(--mantine-spacing-sm);
+  }
+
+  .calagopus-chat-model-picker {
+    align-items: stretch;
+  }
+
+  .calagopus-chat-model-picker > .mantine-Select-root,
+  .calagopus-chat-model-picker > .mantine-Button-root {
+    width: 100%;
+  }
+
+  .calagopus-chat-message {
+    max-width: 94%;
+  }
+}
+
+.calagopus-chat-settings {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
+}
+
+.calagopus-chat-model-picker {
+  width: 100%;
+}
+
+.calagopus-chat-model-picker > .mantine-Select-root {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.calagopus-chat-token-metric {
+  background: var(--mantine-color-default);
+}
+
+.calagopus-chat-changelog-entry + .calagopus-chat-changelog-entry {
+  padding-top: var(--mantine-spacing-sm);
+  border-top: 1px solid var(--mantine-color-default-border);
 }
