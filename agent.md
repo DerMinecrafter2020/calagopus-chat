@@ -28,7 +28,7 @@ After `9.10.10`, the next version is `10.0.0`; the major component can continue 
 
 ## GitHub release and `.c7s.zip`
 
-The `.github/workflows/release.yml` workflow runs when a `v*` tag is pushed. It verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release. It also supports manual runs from GitHub Actions when you provide an existing version tag.
+The `.github/workflows/release.yml` workflow runs when a `v*` tag is pushed. It verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release. It also supports manual runs: if the requested tag exists, the workflow checks out and packages that tag; if it does not exist, it packages the selected branch and the release step creates the tag on that commit.
 
 Before creating a tag:
 
@@ -42,6 +42,8 @@ Before creating a tag:
    ```
 
 4. Check the repository's **Actions** tab. When the workflow succeeds, download the `.c7s.zip` from the generated GitHub Release.
+
+To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For a first release with the current manifests, that tag is `v0.1.0`.
 
 The archive layout must have `Metadata.toml` at its root, Rust sources and `Cargo.toml` under `backend/`, frontend sources and `package.json` under `frontend/`, and SQL migrations under `migrations/`. Do not include the Panel-generated `frontend/tsconfig.json`, `node_modules`, or an extra enclosing `com_calagopus_chat/` directory.
 

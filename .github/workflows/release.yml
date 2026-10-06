@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to package (for example v0.1.0)
+        description: Version tag to publish (for example v0.1.0)
         required: true
         type: string
 
@@ -21,18 +21,37 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+        uses: actions/checkout@v7
+
+      - name: Use the existing tag for manual runs when available
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Tag must use the form vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            git fetch --depth=1 origin "refs/tags/${RELEASE_TAG}"
+            git checkout --detach FETCH_HEAD
+            echo "Using the existing tag ${RELEASE_TAG}."
+          else
+            echo "Tag ${RELEASE_TAG} does not exist yet; packaging the selected branch commit."
+          fi
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
       - name: Validate release tag and package versions
         env:
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
         run: |
           python - <<'PY'
           import json
@@ -124,10 +143,11 @@ jobs:
           PY
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: Calagopus Chat ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          name: Calagopus Chat ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: com_calagopus_chat.c7s.zip
           fail_on_unmatched_files: true
