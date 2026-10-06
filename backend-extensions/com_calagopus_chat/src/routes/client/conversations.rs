@@ -107,7 +107,7 @@ mod post {
     use super::*;
 
     #[derive(ToSchema, Deserialize)]
-    struct PayloadData {
+    pub struct PayloadData {
         kind: ConversationKind,
         #[serde(default)]
         title: Option<String>,

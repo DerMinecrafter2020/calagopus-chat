@@ -95,7 +95,7 @@ mod post {
     use super::*;
 
     #[derive(ToSchema, Deserialize)]
-    struct PayloadData {
+    pub struct PayloadData {
         content: String,
     }
 

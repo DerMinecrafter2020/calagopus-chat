@@ -55,7 +55,7 @@ mod put {
     use url::Url;
 
     #[derive(ToSchema, Deserialize)]
-    struct PayloadData {
+    pub struct PayloadData {
         ai_enabled: bool,
         ai_base_url: String,
         ai_model: String,
