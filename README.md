@@ -32,7 +32,7 @@ The extension targets Calagopus Panel `>=1.2.3`. Its frontend uses the official 
 
 ## GitHub releases
 
-The GitHub Actions workflow in `.github/workflows/release.yml` creates a GitHub Release with `com_calagopus_chat.c7s.zip` whenever a `vMAJOR.MINOR.PATCH` tag is pushed. It verifies that the tag matches the versions in both `Cargo.toml` and `frontend/package.json`, then packages the root `Metadata.toml`, `backend/`, `frontend/`, and `migrations/` entries in the archive layout Calagopus expects. You can also run it manually from the Actions tab: enter the version tag and select the branch to release. If the tag already exists, it uses the tagged commit; if it is new, it packages the selected branch and creates the tag with the release.
+The GitHub Actions workflow in `.github/workflows/release.yml` first builds the Rust extension with the Panel's `heavy-release` profile and runs the frontend CI build against Panel `1.2.3` and `1.2.4` on isolated GitHub runners. It will not publish a release unless both preflight builds pass. It then verifies that the tag matches the versions in both `Cargo.toml` and `frontend/package.json`, packages the root `Metadata.toml`, `backend/`, `frontend/`, and `migrations/` entries in the archive layout Calagopus expects, and creates a GitHub Release with `com_calagopus_chat.c7s.zip`. You can also run it manually from the Actions tab: enter the version tag and select the branch to release. If the tag already exists, it uses the tagged commit; if it is new, it packages the selected branch and creates the tag with the release.
 
 To publish a release, update both package versions, commit the change, and push the matching tag. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md). For example:
 

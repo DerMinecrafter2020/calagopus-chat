@@ -28,7 +28,7 @@ After `9.10.10`, the next version is `10.0.0`; the major component can continue 
 
 ## GitHub release and `.c7s.zip`
 
-The `.github/workflows/release.yml` workflow runs when a `v*` tag is pushed. It verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release. It also supports manual runs: if the requested tag exists, the workflow checks out and packages that tag; if it does not exist, it packages the selected branch and the release step creates the tag on that commit.
+The `.github/workflows/release.yml` workflow first checks the Rust backend and frontend against Panel releases 1.2.3 and 1.2.4 on isolated GitHub runners. A failed preflight blocks packaging and publication. After both builds pass, it runs when a `v*` tag is pushed, verifies that the tag matches the Cargo and frontend versions, packages the extension in Calagopus's expected archive layout, checks the archive, and attaches `com_calagopus_chat.c7s.zip` to a GitHub Release. It also supports manual runs: if the requested tag exists, the workflow checks out and packages that tag; if it does not exist, it packages the selected branch and the release step creates the tag on that commit.
 
 Before creating a tag:
 
