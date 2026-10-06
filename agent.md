@@ -28,7 +28,7 @@ After `9.10.10`, the next version is `10.0.0`; the major component can continue 
 
 ## GitHub release and `.c7s.zip`
 
-The `.github/workflows/release.yml` workflow automatically checks pushes to `main` and `master`. When the Cargo and frontend versions match and the corresponding tag does not already exist, it builds against Panel releases 1.2.3 and 1.2.4 on isolated GitHub runners. A failed preflight blocks packaging and publication. After both builds pass, it creates the version tag and a GitHub Release with `com_calagopus_chat.c7s.zip`. Pushes of `v*` tags and manual runs are also supported.
+The `.github/workflows/release.yml` workflow automatically checks pushes to `main` and `master`. When the Cargo and frontend versions match and the corresponding tag does not already exist, it builds against Panel releases 1.2.3 and 1.2.4 on isolated GitHub runners. Cargo and pnpm dependency caches speed up repeated builds. A failed preflight blocks packaging and publication. After both builds pass, it creates the version tag and a GitHub Release with `com_calagopus_chat.c7s.zip`. Pushes of `v*` tags and manual runs are also supported.
 
 For an automatic release:
 

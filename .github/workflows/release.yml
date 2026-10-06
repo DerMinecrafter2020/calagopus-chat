@@ -20,7 +20,7 @@ permissions:
 jobs:
   prepare:
     name: Resolve release version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       should_release: ${{ steps.resolve.outputs.should_release }}
@@ -94,7 +94,7 @@ jobs:
 
   preflight:
     name: Build check against Panel ${{ matrix.panel_ref }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
     timeout-minutes: 60
@@ -178,6 +178,14 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel -> target
+          shared-key: ${{ matrix.panel_ref }}
+          add-rust-environment-hash-key: false
+          cache-workspace-crates: true
+
       - name: Build Rust extension with the Panel profile
         working-directory: panel
         env:
@@ -195,6 +203,8 @@ jobs:
         uses: pnpm/action-setup@v6
         with:
           version: 11
+          cache: true
+          cache_dependency_path: panel/frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
         working-directory: panel/frontend
@@ -206,7 +216,7 @@ jobs:
 
   release:
     name: Package and publish extension
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [prepare, preflight]
     if: needs.prepare.outputs.should_release == 'true'
 
