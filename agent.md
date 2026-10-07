@@ -29,9 +29,13 @@ Start from the current version, `0.1.9`, and count from the rightmost component.
 
 After `9.10.10`, the next version is `10.0.0`; the major component can continue above 10. Do not add leading zeroes. Before a release, update both package version fields, commit the change, and tag that commit with the matching `vMAJOR.MINOR.PATCH` value. Do not reuse or force-move a published release tag.
 
+Before preparing or pushing release changes, inspect both local and remote tags (for example, `git tag --list 'v*'` and `git ls-remote --tags origin`). If the current package version already has a tag, **do not push additional release-worthy changes with that same version**. Bump both manifests to the next unused version first, and update the current-version references in the README, changelog, workflow example, and this file. A tag is immutable release identity: changes after `v0.1.8` belong in `0.1.9`, not in another push of `0.1.8`.
+
 ## GitHub release and `.c7s.zip`
 
 The `.github/workflows/release.yml` workflow automatically checks pushes to `main` and `master`. When the Cargo and frontend versions match and the corresponding tag does not already exist, it builds against Panel releases 1.2.3 and 1.2.4 on isolated GitHub runners. Cargo and pnpm dependency caches speed up repeated builds. A failed preflight blocks packaging and publication. After both builds pass, it creates the version tag and a GitHub Release with `com_calagopus_chat.c7s.zip`. Pushes of `v*` tags and manual runs are also supported.
+
+On a branch push, if `v<package version>` already exists remotely, the workflow deliberately skips both preflight and release to avoid duplicate releases. It does not update or recreate the existing release from newer branch commits. Bump to the next unused version before pushing those changes.
 
 For an automatic release:
 
@@ -42,6 +46,8 @@ For an automatic release:
 4. Check the repository's **Actions** tab. When the workflow succeeds, download the `.c7s.zip` from the generated GitHub Release.
 
 To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For the current manifests, that tag is `v0.1.9`.
+
+If the manually selected tag already exists, the workflow checks out and packages the commit that the tag points to—not newer code from the selected branch. Use this to retry a failed release for that exact tagged commit; bump the version to publish later changes.
 
 If an earlier failed run already left a tag pointing at a commit with the wrong package version, remove and recreate that tag only if no GitHub Release was published for it. Never move or reuse a tag for a published release; bump to the next version instead.
 
