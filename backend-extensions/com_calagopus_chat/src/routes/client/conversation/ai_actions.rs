@@ -1,7 +1,7 @@
 use axum::{extract::Path, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use shared::{
-    GetIp, GetState, Payload,
+    GetIp, GetRequestHost, GetState, Payload,
     models::{
         server::Server,
         user::{GetAuthMethod, GetPermissionManager, GetUser, GetUserImpersonator},
@@ -43,6 +43,7 @@ mod post {
         auth_method: GetAuthMethod,
         user_impersonator: GetUserImpersonator,
         ip: GetIp,
+        request_host: GetRequestHost,
         Path((conversation_uuid, message_uuid)): Path<(uuid::Uuid, uuid::Uuid)>,
         Payload(data): Payload<PayloadData>,
     ) -> ApiResponseResult {
@@ -339,6 +340,7 @@ mod post {
             impersonator: user_impersonator.0.as_ref().map(|impersonator| &impersonator.0),
             permissions: &permissions.0,
             ip: ip.0,
+            request_host: request_host.0.as_deref(),
             server_info_enabled: settings.ai_server_info_enabled,
             server_power_enabled: settings.ai_server_power_enabled,
             server_control_api_key: settings.ai_server_control_api_key.as_str(),

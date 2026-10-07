@@ -338,6 +338,51 @@
   padding-inline: 3px;
 }
 
+.calagopus-chat-typing-dots {
+  display: inline-flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 2px;
+}
+
+.calagopus-chat-typing-dots > span {
+  width: 6px;
+  height: 6px;
+  background: var(--mantine-color-dimmed);
+  border-radius: 50%;
+  animation: calagopus-chat-typing 1.2s ease-in-out infinite;
+}
+
+.calagopus-chat-typing-dots > span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.calagopus-chat-typing-dots > span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes calagopus-chat-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calagopus-chat-typing-dots > span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 .calagopus-chat-composer {
   display: flex;
   flex: 0 0 auto;

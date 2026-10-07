@@ -1,5 +1,10 @@
 # Calagopus Chat changelog
 
+## 0.2.0 — 2026-10-07
+- Fixed internal Panel API requests by forwarding the connection and host metadata expected by the Panel router.
+- Added an animated three-dot typing indicator while the AI prepares a direct-chat or `@AI` group reply.
+- Improved server-tool error details to identify the failing Panel route without exposing server UUIDs.
+
 ## 0.1.10 — 2026-10-07
 - Added a dedicated encrypted Panel user API key for AI server control. The key's per-server scopes and the requesting user's own server permissions are both required, and confirmations remain mandatory.
 - Added AI-enabled group chats; the AI responds only when mentioned with `@AI`, and only the user who requested a pending power action can confirm it.

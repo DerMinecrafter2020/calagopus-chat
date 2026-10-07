@@ -56,6 +56,10 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function explicitlyMentionsAi(content: string): boolean {
+  return content.split(/\s+/).some((word) => word.replace(/^[^\w@]+|[^\w@]+$/g, '').toLowerCase() === '@ai');
+}
+
 type ChatWidgetMode = 'widget' | 'page';
 type ChatWidgetSize = { width: number; height: number };
 type ChatWidgetResizeOrigin = ChatWidgetSize & {
@@ -86,6 +90,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
   const [listLoading, setListLoading] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [aiReplyPendingConversationUuid, setAiReplyPendingConversationUuid] = useState<string | null>(null);
   const [composeMode, setComposeMode] = useState<ConversationKind | null>(null);
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -299,7 +304,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
 
     const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
     if (nearBottom) element.scrollTop = element.scrollHeight;
-  }, [messages]);
+  }, [messages, aiReplyPendingConversationUuid]);
 
   useEffect(() => {
     if (!expanded || !user || !composeMode || composeMode === 'ai') return;
@@ -354,11 +359,18 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     const conversationUuid = activeConversationUuid;
     const content = draft.trim();
     if (!conversationUuid || !content || sending) return;
+    const aiWillRespond =
+      activeConversation?.kind === 'ai' ||
+      (activeConversation?.kind === 'group' &&
+        activeConversation.aiEnabled &&
+        explicitlyMentionsAi(content));
 
     setSending(true);
     setDraft('');
+    if (aiWillRespond) setAiReplyPendingConversationUuid(conversationUuid);
     try {
       await postMessage(conversationUuid, content);
+      if (aiWillRespond) setAiReplyPendingConversationUuid(null);
       const response = await getMessages(conversationUuid);
       setMessages(response.messages);
       await markConversationRead(conversationUuid);
@@ -375,6 +387,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
       }
       addToast(httpErrorToHuman(error), 'error');
     } finally {
+      if (aiWillRespond) setAiReplyPendingConversationUuid(null);
       setSending(false);
     }
   };
@@ -641,6 +654,24 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                         serverActionDisabled={processingServerActionMessageUuid !== null}
                       />
                     ))}
+                    {aiReplyPendingConversationUuid === activeConversationUuid && (
+                      <div
+                        className='calagopus-chat-message is-ai calagopus-chat-typing-message'
+                        role='status'
+                        aria-label={tExt('chat.aiTyping', {})}
+                      >
+                        <Text className='calagopus-chat-message-author' size='xs' c='dimmed'>
+                          {tExt('chat.aiTitle', {})}
+                        </Text>
+                        <Paper withBorder radius='md' p='xs' className='calagopus-chat-message-paper'>
+                          <span className='calagopus-chat-typing-dots' aria-hidden='true'>
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                        </Paper>
+                      </div>
+                    )}
                   </Stack>
                 )}
               </div>

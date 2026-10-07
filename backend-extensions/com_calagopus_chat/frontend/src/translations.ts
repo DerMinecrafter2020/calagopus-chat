@@ -20,6 +20,7 @@ const translations = defineTranslations({
       directFallback: 'Direct message',
       groupFallback: 'Group chat',
       privateAiSubtitle: 'Private AI conversation',
+      aiTyping: 'Calagopus AI is typing…',
       groupSubtitle: 'Group conversation',
       groupAiSubtitle: 'Group conversation · mention @AI for a reply',
       directSubtitle: 'Direct message',

@@ -8,6 +8,7 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 - A standalone Chat page in the Panel account sidebar; administrators choose either the floating widget or page-only mode.
 - Direct messages and named group chats between active panel users.
 - Optional AI-enabled group chats that answer only when a member explicitly mentions `@AI`.
+- An animated typing indicator while AI responses are being prepared.
 - Remove a conversation from your own chat list without deleting it for other participants.
 - Conversation history and unread message counts persisted in PostgreSQL.
 - AI chats with OpenAI-compatible providers (including OpenRouter and custom endpoints), Anthropic, Google Gemini, and Ollama.
@@ -45,7 +46,7 @@ The GitHub Actions workflow in `.github/workflows/release.yml` automatically che
 
 To publish automatically, update both package versions to the same unused version, commit the change, and push it to `main` or `master`. The runner derives the matching version tag and creates the release after the preflight builds pass. Ordinary code pushes without a version bump do not create duplicate releases. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md).
 
-For the current `0.1.10` version, a push to the default branch will create `v0.1.10` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
+For the current `0.2.0` version, a push to the default branch will create `v0.2.0` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
 
 After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
 

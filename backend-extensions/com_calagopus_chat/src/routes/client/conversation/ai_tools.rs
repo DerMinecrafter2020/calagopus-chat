@@ -59,6 +59,7 @@ pub(super) struct ToolContext<'a> {
     pub impersonator: Option<&'a User>,
     pub permissions: &'a PermissionManager,
     pub ip: IpAddr,
+    pub request_host: Option<&'a str>,
     pub server_info_enabled: bool,
     pub server_power_enabled: bool,
     pub server_control_api_key: &'a str,
@@ -473,12 +474,28 @@ fn required_string<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, anyho
         .ok_or_else(|| anyhow::anyhow!("Missing required tool argument `{key}`."))
 }
 
+fn panel_route_label(method: &Method, uri: &str) -> String {
+    let path = uri.split('?').next().unwrap_or(uri);
+    let route = if path == "/api/client/servers" {
+        "/api/client/servers"
+    } else if path.starts_with("/api/client/servers/") && path.ends_with("/resources") {
+        "/api/client/servers/{server}/resources"
+    } else if path.starts_with("/api/client/servers/") && path.ends_with("/power") {
+        "/api/client/servers/{server}/power"
+    } else {
+        "/api/client"
+    };
+
+    format!("{method} {route}")
+}
+
 pub(super) async fn client_api_json(
     context: &ToolContext<'_>,
     method: Method,
     uri: &str,
     body: Option<Value>,
 ) -> Result<Value, anyhow::Error> {
+    let route_label = panel_route_label(&method, uri);
     let body = match body {
         Some(body) => Body::from(serde_json::to_vec(&body)?),
         None => Body::empty(),
@@ -490,7 +507,15 @@ pub(super) async fn client_api_json(
         .header(header::CONTENT_TYPE, "application/json")
         .body(body)?;
 
+    request
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(std::net::SocketAddr::new(context.ip, 0)));
     request.extensions_mut().insert(context.ip);
+    if let Some(host) = context.request_host {
+        request
+            .headers_mut()
+            .insert(header::HOST, HeaderValue::from_str(host)?);
+    }
     if context.impersonator.is_some() {
         request.headers_mut().insert(
             "Calagopus-User",
@@ -520,11 +545,19 @@ pub(super) async fn client_api_json(
             return Ok(Value::Null);
         }
         return Err(anyhow::anyhow!(
-            "Panel server request failed with HTTP {status} (content type: {content_type})."
+            "Panel server request {route_label} failed with HTTP {status} (content type: {content_type})."
         ));
     }
 
     if !status.is_success() {
+        if status.is_server_error() {
+            tracing::warn!(
+                panel_route = %route_label,
+                http_status = %status,
+                content_type = %content_type,
+                "Panel server request failed"
+            );
+        }
         let response = serde_json::from_slice::<Value>(&body).ok();
         let error = response
             .as_ref()
@@ -546,24 +579,25 @@ pub(super) async fn client_api_json(
             });
 
         return Err(match error {
-            Some(error) => anyhow::anyhow!("Panel server request failed with HTTP {status}: {error}"),
+            Some(error) => anyhow::anyhow!("Panel server request {route_label} failed with HTTP {status}: {error}"),
             None if response.is_none() => anyhow::anyhow!(
-                "Panel server request failed with HTTP {status} and returned a non-JSON error response (content type: {content_type})."
+                "Panel server request {route_label} failed with HTTP {status} and returned a non-JSON error response (content type: {content_type})."
             ),
             None => anyhow::anyhow!(
-                "Panel server request failed with HTTP {status} and did not include a readable error message (content type: {content_type})."
+                "Panel server request {route_label} failed with HTTP {status} and did not include a readable error message (content type: {content_type})."
             ),
         });
     }
 
     serde_json::from_slice(&body).map_err(|error| {
         tracing::warn!(
+            panel_route = %route_label,
             http_status = %status,
             content_type = %content_type,
             "Panel server request returned invalid JSON: {error}"
         );
         anyhow::anyhow!(
-            "Panel server request returned an invalid JSON response (HTTP {status}, content type: {content_type}): {error}"
+            "Panel server request {route_label} returned an invalid JSON response (HTTP {status}, content type: {content_type}): {error}"
         )
     })
 }
@@ -601,5 +635,23 @@ mod tests {
         assert_eq!(list_schema["type"], "OBJECT");
         assert_eq!(list_schema["properties"]["search"]["type"], "STRING");
         assert!(list_schema.get("additionalProperties").is_none());
+    }
+
+    #[test]
+    fn panel_route_diagnostics_redact_server_identifiers() {
+        assert_eq!(
+            super::panel_route_label(
+                &axum::http::Method::GET,
+                "/api/client/servers/123e4567-e89b-12d3-a456-426614174000/resources",
+            ),
+            "GET /api/client/servers/{server}/resources"
+        );
+        assert_eq!(
+            super::panel_route_label(
+                &axum::http::Method::POST,
+                "/api/client/servers/123e4567-e89b-12d3-a456-426614174000/power",
+            ),
+            "POST /api/client/servers/{server}/power"
+        );
     }
 }
