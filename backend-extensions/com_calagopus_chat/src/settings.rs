@@ -17,6 +17,7 @@ pub struct ExtensionSettingsData {
     pub ai_base_url: compact_str::CompactString,
     pub ai_model: compact_str::CompactString,
     pub ai_api_key: compact_str::CompactString,
+    pub ai_server_control_api_key: compact_str::CompactString,
     pub ai_system_prompt: compact_str::CompactString,
     pub ai_server_info_enabled: bool,
     pub ai_server_power_enabled: bool,
@@ -31,6 +32,7 @@ impl Default for ExtensionSettingsData {
             ai_base_url: "https://api.openai.com/v1".into(),
             ai_model: "gpt-4o-mini".into(),
             ai_api_key: compact_str::CompactString::default(),
+            ai_server_control_api_key: compact_str::CompactString::default(),
             ai_system_prompt: "You are the Calagopus Chat assistant. Be helpful, clear, and concise."
                 .into(),
             ai_server_info_enabled: false,
@@ -82,8 +84,15 @@ impl SettingsSerializeExt for ExtensionSettingsData {
                 self.floating_widget_enabled.to_compact_string(),
             );
 
-        Ok(serializer
+        let serializer = serializer
             .write_raw_encrypted_setting("ai_api_key", self.ai_api_key.clone())
+            .await?;
+
+        Ok(serializer
+            .write_raw_encrypted_setting(
+                "ai_server_control_api_key",
+                self.ai_server_control_api_key.clone(),
+            )
             .await?)
     }
 }
@@ -98,6 +107,10 @@ impl SettingsDeserializeExt for ExtensionSettingsDataDeserializer {
     ) -> Result<ExtensionSettings, anyhow::Error> {
         let ai_api_key = deserializer
             .read_raw_encrypted_setting("ai_api_key")
+            .await?
+            .unwrap_or_default();
+        let ai_server_control_api_key = deserializer
+            .read_raw_encrypted_setting("ai_server_control_api_key")
             .await?
             .unwrap_or_default();
 
@@ -116,6 +129,7 @@ impl SettingsDeserializeExt for ExtensionSettingsDataDeserializer {
                 .take_raw_setting("ai_model")
                 .unwrap_or_else(|| "gpt-4o-mini".into()),
             ai_api_key,
+            ai_server_control_api_key,
             ai_system_prompt: deserializer
                 .take_raw_setting("ai_system_prompt")
                 .unwrap_or_else(|| {

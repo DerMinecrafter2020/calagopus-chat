@@ -1,3 +1,4 @@
+use sqlx::Row;
 use shared::State;
 use utoipa_axum::router::OpenApiRouter;
 
@@ -36,14 +37,14 @@ async fn is_member(
     .await
 }
 
-async fn conversation_kind(
+async fn conversation_info(
     state: &State,
     conversation_uuid: uuid::Uuid,
     user_uuid: uuid::Uuid,
-) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar(
+) -> Result<Option<(String, bool)>, sqlx::Error> {
+    let row = sqlx::query(
         r#"
-        SELECT conversations.kind
+        SELECT conversations.kind, conversations.ai_enabled
         FROM com_calagopus_chat_conversations AS conversations
         JOIN com_calagopus_chat_members AS members
           ON members.conversation_uuid = conversations.uuid
@@ -53,5 +54,13 @@ async fn conversation_kind(
     .bind(conversation_uuid)
     .bind(user_uuid)
     .fetch_optional(state.database.read())
-    .await
+    .await?;
+
+    row.map(|row| {
+        Ok((
+            row.try_get("kind")?,
+            row.try_get("ai_enabled")?,
+        ))
+    })
+    .transpose()
 }

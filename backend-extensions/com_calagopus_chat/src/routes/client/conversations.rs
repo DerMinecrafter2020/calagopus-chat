@@ -37,6 +37,7 @@ mod get {
             SELECT
                 conversations.uuid,
                 conversations.kind,
+                conversations.ai_enabled,
                 conversations.title,
                 conversations.created_at,
                 latest.content AS last_message,
@@ -96,6 +97,7 @@ mod get {
             conversations.push(ConversationSummary {
                 uuid: row.try_get("uuid")?,
                 kind: row.try_get("kind")?,
+                ai_enabled: row.try_get("ai_enabled")?,
                 title: row.try_get("title")?,
                 created_at: row.try_get("created_at")?,
                 last_message: row.try_get("last_message")?,
@@ -126,6 +128,8 @@ mod post {
         title: Option<String>,
         #[serde(default)]
         participant_uuids: Vec<uuid::Uuid>,
+        #[serde(default)]
+        ai_enabled: bool,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -133,6 +137,7 @@ mod post {
         uuid: uuid::Uuid,
         kind: String,
         title: Option<String>,
+        ai_enabled: bool,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -178,7 +183,12 @@ mod post {
             _ => {}
         }
 
-        if data.kind == ConversationKind::Ai {
+        if data.ai_enabled && data.kind != ConversationKind::Group {
+            return Err(ApiResponse::error("Only group chats can include the AI assistant.")
+                .with_status(StatusCode::BAD_REQUEST));
+        }
+
+        if data.kind == ConversationKind::Ai || data.ai_enabled {
             let settings = crate::settings::load(&state.0).await?;
             if !settings.ai_available() {
                 return Err(ApiResponse::error(
@@ -251,13 +261,14 @@ mod post {
                 sqlx::query_scalar::<_, uuid::Uuid>(
                     r#"
                     INSERT INTO com_calagopus_chat_conversations
-                        (kind, title, created_by)
-                    VALUES ('group', $1, $2)
+                        (kind, title, created_by, ai_enabled)
+                    VALUES ('group', $1, $2, $3)
                     RETURNING uuid
                     "#,
                 )
                 .bind(title.as_deref())
                 .bind(actor_uuid)
+                .bind(data.ai_enabled)
                 .fetch_one(&mut *transaction)
                 .await?
             }
@@ -265,8 +276,8 @@ mod post {
                 sqlx::query_scalar::<_, uuid::Uuid>(
                     r#"
                     INSERT INTO com_calagopus_chat_conversations
-                        (kind, title, created_by)
-                    VALUES ('ai', $1, $2)
+                        (kind, title, created_by, ai_enabled)
+                    VALUES ('ai', $1, $2, true)
                     RETURNING uuid
                     "#,
                 )
@@ -311,6 +322,7 @@ mod post {
                 serde_json::json!({
                     "conversation_uuid": conversation_uuid,
                     "kind": data.kind.as_str(),
+                    "ai_enabled": data.kind == ConversationKind::Ai || data.ai_enabled,
                 }),
             )
             .await;
@@ -320,6 +332,7 @@ mod post {
                 uuid: conversation_uuid,
                 kind: data.kind.as_str().to_string(),
                 title,
+                ai_enabled: data.kind == ConversationKind::Ai || data.ai_enabled,
             },
         })
         .ok()

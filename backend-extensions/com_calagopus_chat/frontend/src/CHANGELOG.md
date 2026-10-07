@@ -1,5 +1,9 @@
 # Calagopus Chat changelog
 
+## 0.1.10 — 2026-10-07
+- Added a dedicated encrypted Panel user API key for AI server control. The key's per-server scopes and the requesting user's own server permissions are both required, and confirmations remain mandatory.
+- Added AI-enabled group chats; the AI responds only when mentioned with `@AI`, and only the user who requested a pending power action can confirm it.
+
 ## 0.1.9 — 2026-10-07
 - Added a standalone Chat page and an exclusive widget/page display setting; users get one active Chat view at a time.
 - Added unread-count badges to both collapsed and expanded chat views.

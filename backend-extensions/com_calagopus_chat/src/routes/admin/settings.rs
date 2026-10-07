@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use shared::{
     GetState, Payload,
-    models::{admin_activity::GetAdminActivityLogger, user::GetPermissionManager},
+    models::{admin_activity::GetAdminActivityLogger, user::{GetPermissionManager, User}},
     response::{ApiResponse, ApiResponseResult},
 };
 use utoipa::ToSchema;
@@ -22,6 +22,7 @@ mod get {
         ai_model: String,
         ai_system_prompt: String,
         api_key_configured: bool,
+        server_control_api_key_configured: bool,
         ai_server_info_enabled: bool,
         ai_server_power_enabled: bool,
         floating_widget_enabled: bool,
@@ -74,8 +75,10 @@ mod get {
                 ai_model: settings.ai_model.to_string(),
                 ai_system_prompt: settings.ai_system_prompt.to_string(),
                 api_key_configured: !settings.ai_api_key.trim().is_empty(),
+                server_control_api_key_configured: !settings.ai_server_control_api_key.trim().is_empty(),
                 ai_server_info_enabled: settings.ai_server_info_enabled,
-                ai_server_power_enabled: settings.ai_server_power_enabled,
+                ai_server_power_enabled: settings.ai_server_power_enabled
+                    && !settings.ai_server_control_api_key.trim().is_empty(),
                 floating_widget_enabled: settings.floating_widget_enabled,
             },
             token_usage: TokenUsageResponse {
@@ -104,10 +107,13 @@ mod put {
         ai_model: String,
         ai_system_prompt: String,
         ai_api_key: Option<String>,
+        server_control_api_key: Option<String>,
         #[serde(default)]
         ai_server_info_enabled: bool,
         #[serde(default)]
         ai_server_power_enabled: bool,
+        #[serde(default)]
+        clear_server_control_api_key: bool,
         #[serde(default = "default_floating_widget_enabled")]
         floating_widget_enabled: bool,
         #[serde(default)]
@@ -142,6 +148,11 @@ mod put {
         let ai_model = data.ai_model.trim();
         let ai_system_prompt = data.ai_system_prompt.trim();
         let api_key = data.ai_api_key.as_deref().unwrap_or_default().trim();
+        let server_control_api_key = data
+            .server_control_api_key
+            .as_deref()
+            .unwrap_or_default()
+            .trim();
         let ai_provider = data.ai_provider.trim();
 
         if !matches!(
@@ -154,13 +165,66 @@ mod put {
             || ai_system_prompt.is_empty()
             || ai_system_prompt.chars().count() > 4000
             || api_key.chars().count() > 4096
+            || server_control_api_key.chars().count() > 4096
             || (data.ai_server_power_enabled && !data.ai_server_info_enabled)
         {
             return Err(ApiResponse::error("One or more AI settings are outside the allowed limits.")
                 .with_status(StatusCode::BAD_REQUEST));
         }
 
+        let current_settings = crate::settings::load(&state.0).await?;
+        let effective_server_control_api_key = if data.clear_server_control_api_key {
+            ""
+        } else if !server_control_api_key.is_empty() {
+            server_control_api_key
+        } else {
+            current_settings.ai_server_control_api_key.trim()
+        };
+
+        if data.ai_server_power_enabled
+            || (!data.clear_server_control_api_key && !server_control_api_key.is_empty())
+        {
+            if effective_server_control_api_key.is_empty() {
+                return Err(ApiResponse::error(
+                    "A Panel user API key is required to enable AI server power controls.",
+                )
+                .with_status(StatusCode::BAD_REQUEST));
+            }
+
+            let Some((control_user, control_api_key)) = User::by_api_key_cached(
+                &state.database,
+                effective_server_control_api_key,
+            )
+            .await?
+            else {
+                return Err(ApiResponse::error(
+                    "The Panel server-control API key is invalid or expired.",
+                )
+                .with_status(StatusCode::BAD_REQUEST));
+            };
+
+            const REQUIRED_SERVER_PERMISSIONS: &[&str] =
+                &["control.start", "control.stop", "control.restart"];
+            if !control_api_key.enabled
+                || control_user.frozen
+                || control_user.suspended
+                || REQUIRED_SERVER_PERMISSIONS.iter().any(|required| {
+                    !control_api_key
+                        .server_permissions
+                        .iter()
+                        .any(|permission| permission.as_str() == *required)
+                })
+            {
+                return Err(ApiResponse::error(
+                    "The Panel server-control API key must be enabled and include control.start, control.stop, and control.restart permissions.",
+                )
+                .with_status(StatusCode::BAD_REQUEST));
+            }
+        }
+
         let api_key_updated = data.clear_api_key || !api_key.is_empty();
+        let server_control_api_key_updated =
+            data.clear_server_control_api_key || !server_control_api_key.is_empty();
         let mut settings = state.settings.get_mut().await?;
         {
             let extension_settings: &mut crate::settings::ExtensionSettingsData =
@@ -180,6 +244,13 @@ mod put {
             } else if !api_key.is_empty() {
                 extension_settings.ai_api_key = api_key.into();
             }
+
+            if data.clear_server_control_api_key {
+                extension_settings.ai_server_control_api_key =
+                    compact_str::CompactString::default();
+            } else if !server_control_api_key.is_empty() {
+                extension_settings.ai_server_control_api_key = server_control_api_key.into();
+            }
         }
 
         settings.save().await?;
@@ -195,6 +266,7 @@ mod put {
                     "ai_server_power_enabled": data.ai_server_power_enabled,
                     "floating_widget_enabled": data.floating_widget_enabled,
                     "api_key_updated": api_key_updated,
+                    "server_control_api_key_updated": server_control_api_key_updated,
                 }),
             )
             .await;

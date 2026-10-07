@@ -17,19 +17,19 @@ Use a three-part version in `MAJOR.MINOR.PATCH` order. Keep these values identic
 
 - `backend-extensions/com_calagopus_chat/Cargo.toml` → `[package].version`
 - `backend-extensions/com_calagopus_chat/frontend/package.json` → `version`
-- The Git tag, prefixed with `v` (for example, `v0.1.9`)
+- The Git tag, prefixed with `v` (for example, `v0.1.10`)
 
-Start from the current version, `0.1.9`, and count from the rightmost component. Increment that component through `10`; when it reaches `10`, reset it to `0` and increment the component to its left. Apply the same rollover to the middle component. Examples:
+Start from the current version, `0.1.10`, and count from the rightmost component. Increment that component through `10`; when it reaches `10`, reset it to `0` and increment the component to its left. Apply the same rollover to the middle component. Examples:
 
 ```text
-0.1.9 → 0.1.10 → 0.2.0
+0.1.10 → 0.2.0
 0.2.10 → 0.3.0
 0.10.10 → 1.0.0
 ```
 
 After `9.10.10`, the next version is `10.0.0`; the major component can continue above 10. Do not add leading zeroes. Before a release, update both package version fields, commit the change, and tag that commit with the matching `vMAJOR.MINOR.PATCH` value. Do not reuse or force-move a published release tag.
 
-Before preparing or pushing release changes, inspect both local and remote tags (for example, `git tag --list 'v*'` and `git ls-remote --tags origin`). If the current package version already has a tag, **do not push additional release-worthy changes with that same version**. Bump both manifests to the next unused version first, and update the current-version references in the README, changelog, workflow example, and this file. Add a `## MAJOR.MINOR.PATCH — YYYY-MM-DD` section with the release changes to `frontend/src/CHANGELOG.md`; the workflow publishes that matching section in the GitHub Release body and fails if it is missing. A tag is immutable release identity: changes after `v0.1.8` belong in `0.1.9`, not in another push of `0.1.8`.
+Before preparing or pushing release changes, inspect both local and remote tags (for example, `git tag --list 'v*'` and `git ls-remote --tags origin`). If the current package version already has a tag, **do not push additional release-worthy changes with that same version**. Bump both manifests to the next unused version first, and update the current-version references in the README, changelog, workflow example, and this file. Add a `## MAJOR.MINOR.PATCH — YYYY-MM-DD` section with the release changes to `frontend/src/CHANGELOG.md`; the workflow publishes that matching section in the GitHub Release body and fails if it is missing. A tag is immutable release identity: changes after `v0.1.9` belong in `0.1.10`, not in another push of `0.1.9`.
 
 ## GitHub release and `.c7s.zip`
 
@@ -45,7 +45,7 @@ For an automatic release:
 
 4. Check the repository's **Actions** tab. When the workflow succeeds, download the `.c7s.zip` from the generated GitHub Release.
 
-To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For the current manifests, that tag is `v0.1.9`.
+To start a release manually, use **Actions → Release Calagopus Chat → Run workflow**, select the branch containing the release files, and enter the version tag. For the current manifests, that tag is `v0.1.10`.
 
 If the manually selected tag already exists, the workflow checks out and packages the commit that the tag points to—not newer code from the selected branch. Use this to retry a failed release for that exact tagged commit; bump the version to publish later changes.
 

@@ -7,6 +7,7 @@ import {
 
 export default async (conversation: {
   kind: 'direct' | 'group' | 'ai';
+  aiEnabled: boolean;
   title?: string;
   participantUuids: string[];
 }) => {

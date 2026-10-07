@@ -7,7 +7,7 @@ use shared::models::{
     server::Server,
     user::{AuthMethod, PermissionManager, User},
 };
-use std::net::IpAddr;
+use std::{collections::HashSet, net::IpAddr};
 
 #[derive(Clone)]
 pub(super) struct ToolDefinition {
@@ -61,11 +61,15 @@ pub(super) struct ToolContext<'a> {
     pub ip: IpAddr,
     pub server_info_enabled: bool,
     pub server_power_enabled: bool,
+    pub server_control_api_key: &'a str,
+    pub group_ai: bool,
+    pub group_members: &'a [User],
 }
 
 pub(super) fn definitions(
     server_info_enabled: bool,
     server_power_enabled: bool,
+    server_control_api_key_configured: bool,
 ) -> Vec<ToolDefinition> {
     let mut definitions = Vec::new();
 
@@ -101,10 +105,10 @@ pub(super) fn definitions(
         });
     }
 
-    if server_info_enabled && server_power_enabled {
+    if server_info_enabled && server_power_enabled && server_control_api_key_configured {
         definitions.push(ToolDefinition {
             name: "request_server_power_action",
-            description: "Prepare a start, stop, or restart request for an accessible server. Requires the corresponding control.start, control.stop, or control.restart permission. The user must confirm the request in chat before it is submitted.",
+            description: "Prepare a start, stop, or restart request for an accessible server. Requires the configured Panel API key and the current user's corresponding control.start, control.stop, or control.restart permission. The user must confirm the request in chat before it is submitted.",
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -226,26 +230,49 @@ pub(super) async fn execute(
                 .pointer("/servers/data")
                 .and_then(Value::as_array)
                 .ok_or_else(|| anyhow::anyhow!("Panel returned an invalid server list"))?;
-            let result = servers
+            let server_entries = servers
                 .iter()
-                .map(|server| {
-                    json!({
-                        "identifier": server.get("uuid_short"),
-                        "name": server.get("name"),
-                        "install_status": server.get("status"),
-                        "suspended": server.get("is_suspended"),
-                    })
+                .filter_map(|server| {
+                    let uuid = server
+                        .get("uuid")
+                        .and_then(Value::as_str)
+                        .and_then(|uuid| uuid::Uuid::parse_str(uuid).ok())?;
+                    Some((server, uuid))
                 })
                 .collect::<Vec<_>>();
+            let server_uuids = server_entries.iter().map(|(_, uuid)| *uuid).collect::<Vec<_>>();
+            let group_accessible_uuids =
+                group_accessible_server_uuids(context, &server_uuids).await?;
+            let mut result = Vec::with_capacity(server_entries.len());
+            for (server, uuid) in server_entries {
+                if !group_accessible_uuids.contains(&uuid) {
+                    continue;
+                }
+                let Some(identifier) = server.get("uuid_short").and_then(Value::as_str) else {
+                    continue;
+                };
+
+                result.push(json!({
+                    "identifier": identifier,
+                    "name": server.get("name"),
+                    "install_status": server.get("status"),
+                    "suspended": server.get("is_suspended"),
+                }));
+            }
             let total = response
                 .pointer("/servers/total")
                 .and_then(Value::as_i64)
-                .unwrap_or(result.len() as i64);
-            let truncated = total > result.len() as i64;
+                .unwrap_or(servers.len() as i64);
+            let truncated = total > servers.len() as i64;
+            let displayed_total = if context.group_ai {
+                result.len() as i64
+            } else {
+                total
+            };
 
             Ok(ToolExecution::Result(json!({
                 "servers": result,
-                "total": total,
+                "total": displayed_total,
                 "truncated": truncated,
             })))
         }
@@ -261,6 +288,11 @@ pub(super) async fn execute(
             }
             let identifier = required_string(arguments, "server_identifier")?;
             let server = accessible_server(context, identifier).await?;
+            if !server_visible_to_group(context, server.uuid).await? {
+                return Err(anyhow::anyhow!(
+                    "That server is only available to some members of this AI group."
+                ));
+            }
             let response = client_api_json(
                 context,
                 Method::GET,
@@ -284,7 +316,9 @@ pub(super) async fn execute(
             })))
         }
         "request_server_power_action"
-            if context.server_info_enabled && context.server_power_enabled =>
+            if context.server_info_enabled
+                && context.server_power_enabled
+                && !context.server_control_api_key.trim().is_empty() =>
         {
             let identifier = required_string(arguments, "server_identifier")?;
             let action = match required_string(arguments, "action")? {
@@ -294,6 +328,11 @@ pub(super) async fn execute(
                 _ => return Err(anyhow::anyhow!("Only start, stop, and restart are available.")),
             };
             let server = accessible_server(context, identifier).await?;
+            if !server_visible_to_group(context, server.uuid).await? {
+                return Err(anyhow::anyhow!(
+                    "That server is only available to some members of this AI group."
+                ));
+            }
             if context
                 .permissions
                 .for_server(&server)
@@ -304,6 +343,7 @@ pub(super) async fn execute(
                     "The current user does not have permission to perform that server action."
                 ));
             }
+            require_control_api_key_permission(context, &server, action.permission()).await?;
 
             Ok(ToolExecution::Pending(PendingPowerAction {
                 server_uuid: server.uuid,
@@ -315,6 +355,60 @@ pub(super) async fn execute(
     }
 }
 
+pub(super) async fn require_control_api_key_permission(
+    context: &ToolContext<'_>,
+    server: &Server,
+    permission: &str,
+) -> Result<(), anyhow::Error> {
+    let key = context.server_control_api_key.trim();
+    if key.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Server power actions require an administrator-configured Panel API key."
+        ));
+    }
+
+    let Some((control_user, control_api_key)) =
+        User::by_api_key_cached(&context.state.database, key).await?
+    else {
+        return Err(anyhow::anyhow!(
+            "The configured Panel server-control API key is invalid or expired."
+        ));
+    };
+
+    if !control_api_key.enabled
+        || control_user.frozen
+        || control_user.suspended
+        || (!control_api_key.allowed_ips.is_empty()
+            && !control_api_key
+                .allowed_ips
+                .iter()
+                .any(|allowed_ip| allowed_ip.contains(context.ip)))
+    {
+        return Err(anyhow::anyhow!(
+            "The configured Panel server-control API key is disabled or not allowed from this IP address."
+        ));
+    }
+
+    let server_identifier = server.uuid.to_string();
+    let control_server = Server::by_user_identifier(
+        &context.state.database,
+        &control_user,
+        &server_identifier,
+    )
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("The configured Panel API key cannot access this server."))?;
+
+    let control_auth_method = AuthMethod::ApiKey(control_api_key);
+    PermissionManager::new(&control_user, &control_auth_method)
+        .for_server(&control_server)
+        .has_server_permission(permission)
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "The configured Panel API key does not grant {permission} for this server."
+            )
+        })
+}
+
 async fn accessible_server(
     context: &ToolContext<'_>,
     identifier: &str,
@@ -323,6 +417,51 @@ async fn accessible_server(
         .await
         .map_err(|_| anyhow::anyhow!("Could not check access to that server."))?
         .ok_or_else(|| anyhow::anyhow!("Server not found or not accessible to the current user."))
+}
+
+pub(super) async fn server_visible_to_group(
+    context: &ToolContext<'_>,
+    server_uuid: uuid::Uuid,
+) -> Result<bool, anyhow::Error> {
+    Ok(group_accessible_server_uuids(context, &[server_uuid])
+        .await?
+        .contains(&server_uuid))
+}
+
+async fn group_accessible_server_uuids(
+    context: &ToolContext<'_>,
+    server_uuids: &[uuid::Uuid],
+) -> Result<HashSet<uuid::Uuid>, anyhow::Error> {
+    let mut accessible = server_uuids.iter().copied().collect::<HashSet<_>>();
+    if !context.group_ai || server_uuids.is_empty() {
+        return Ok(accessible);
+    }
+    if context.group_members.is_empty()
+        || !context
+            .group_members
+            .iter()
+            .any(|member| member.uuid == context.user.uuid)
+    {
+        return Ok(HashSet::new());
+    }
+
+    for member in context.group_members {
+        if member.frozen || member.suspended {
+            return Ok(HashSet::new());
+        }
+
+        let member_accessible = Server::by_user_uuids(&context.state.database, member, server_uuids)
+            .await?
+            .into_iter()
+            .map(|server| server.uuid)
+            .collect::<HashSet<_>>();
+        accessible.retain(|server_uuid| member_accessible.contains(server_uuid));
+        if accessible.is_empty() {
+            break;
+        }
+    }
+
+    Ok(accessible)
 }
 
 fn required_string<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, anyhow::Error> {
@@ -435,16 +574,17 @@ mod tests {
 
     #[test]
     fn admin_settings_gate_each_server_tool_group() {
-        assert!(definitions(false, false).is_empty());
-        assert!(definitions(false, true).is_empty());
+        assert!(definitions(false, false, false).is_empty());
+        assert!(definitions(false, true, true).is_empty());
+        assert_eq!(definitions(true, true, false).len(), 2);
 
-        let read_only = definitions(true, false);
+        let read_only = definitions(true, false, false);
         assert_eq!(
             read_only.iter().map(|tool| tool.name).collect::<Vec<_>>(),
             vec!["list_my_servers", "get_server_status"]
         );
 
-        let read_and_power = definitions(true, true);
+        let read_and_power = definitions(true, true, true);
         assert_eq!(read_and_power.len(), 3);
         assert_eq!(
             read_and_power.last().map(|tool| tool.name),
@@ -454,7 +594,7 @@ mod tests {
 
     #[test]
     fn gemini_function_schema_uses_gemini_type_names() {
-        let tools = definitions(true, true);
+        let tools = definitions(true, true, true);
         let declarations = super::gemini_definitions(&tools);
         let list_schema = &declarations[0]["functionDeclarations"][0]["parameters"];
 

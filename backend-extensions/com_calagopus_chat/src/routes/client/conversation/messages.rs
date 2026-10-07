@@ -59,14 +59,26 @@ mod get {
                 messages.created_at,
                 messages.ai_action_server_name,
                 messages.ai_action_type,
+                messages.ai_action_owner_uuid,
                 CASE
                     WHEN messages.ai_action_status = 'pending'
                       AND messages.ai_action_expires_at <= now() THEN 'expired'
                     ELSE messages.ai_action_status
                 END AS ai_action_status,
-                messages.ai_action_expires_at
+                messages.ai_action_expires_at,
+                COALESCE(
+                    messages.ai_action_owner_uuid = $2
+                    OR (
+                        messages.ai_action_owner_uuid IS NULL
+                        AND conversations.kind = 'ai'
+                        AND conversations.created_by = $2
+                    ),
+                    false
+                ) AS ai_action_can_confirm
             FROM com_calagopus_chat_messages AS messages
             LEFT JOIN users ON users.uuid = messages.sender_uuid
+            JOIN com_calagopus_chat_conversations AS conversations
+              ON conversations.uuid = messages.conversation_uuid
             WHERE messages.conversation_uuid = $1
               AND EXISTS (
                   SELECT 1
@@ -93,13 +105,15 @@ mod get {
                     row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(
                         "ai_action_expires_at",
                     )?,
+                    row.try_get::<bool, _>("ai_action_can_confirm")?,
                 ) {
-                    (Some(action_type), Some(server_name), Some(status), Some(expires_at)) => {
+                    (Some(action_type), Some(server_name), Some(status), Some(expires_at), can_confirm) => {
                         Some(PendingActionSummary {
                             action_type,
                             server_name,
                             status,
                             expires_at,
+                            can_confirm,
                         })
                     }
                     _ => None,
@@ -166,6 +180,15 @@ mod post {
         }
     }
 
+    fn explicitly_mentions_ai(content: &str) -> bool {
+        content.split_whitespace().any(|word| {
+            word.trim_matches(|character: char| {
+                !character.is_alphanumeric() && character != '@' && character != '_'
+            })
+            .eq_ignore_ascii_case("@ai")
+        })
+    }
+
     #[utoipa::path(post, path = "/", params(
         ("conversation" = uuid::Uuid, Path, description = "The conversation ID."),
     ), responses(
@@ -192,14 +215,42 @@ mod post {
             .with_status(StatusCode::BAD_REQUEST));
         }
 
-        let Some(kind) = super::super::conversation_kind(&state.0, conversation_uuid, user.uuid)
-            .await?
+        let Some((kind, conversation_ai_enabled)) =
+            super::super::conversation_info(&state.0, conversation_uuid, user.uuid).await?
         else {
             return Err(ApiResponse::error("Conversation not found.")
                 .with_status(StatusCode::NOT_FOUND));
         };
 
-        let ai_settings = if kind == "ai" {
+        let group_ai = kind == "group" && conversation_ai_enabled;
+        let should_invoke_ai = kind == "ai" || (group_ai && explicitly_mentions_ai(content));
+        let group_members: Vec<shared::models::user::User> = if group_ai && should_invoke_ai {
+            let group_member_uuids: Vec<uuid::Uuid> = sqlx::query_scalar(
+                "SELECT user_uuid FROM com_calagopus_chat_members WHERE conversation_uuid = $1",
+            )
+            .bind(conversation_uuid)
+            .fetch_all(state.database.read())
+            .await?;
+            let mut members = Vec::with_capacity(group_member_uuids.len());
+            for member_uuid in group_member_uuids {
+                let Some(member) = shared::models::user::User::by_uuid_optional_cached(
+                    &state.database,
+                    member_uuid,
+                )
+                .await?
+                else {
+                    return Err(ApiResponse::error(
+                        "Could not verify every member of this AI group.",
+                    )
+                    .with_status(StatusCode::BAD_GATEWAY));
+                };
+                members.push(member);
+            }
+            members
+        } else {
+            Vec::new()
+        };
+        let ai_settings = if should_invoke_ai {
             let settings = crate::settings::load(&state.0).await?;
             if !settings.ai_available() {
                 return Err(ApiResponse::error(
@@ -233,7 +284,8 @@ mod post {
                 serde_json::json!({
                     "conversation_uuid": conversation_uuid,
                     "message_uuid": message_uuid,
-                    "ai_chat": kind == "ai",
+                    "ai_chat": kind == "ai" || group_ai,
+                    "ai_mentioned": group_ai && should_invoke_ai,
                 }),
             )
             .await;
@@ -248,11 +300,15 @@ mod post {
                 ip: ip.0,
                 server_info_enabled: settings.ai_server_info_enabled,
                 server_power_enabled: settings.ai_server_power_enabled,
+                server_control_api_key: settings.ai_server_control_api_key.as_str(),
+                group_ai,
+                group_members: &group_members,
             };
             let answer = match generate_ai_reply(
                 &state.0,
                 &settings,
                 conversation_uuid,
+                group_ai,
                 &tool_context,
             )
             .await
@@ -286,15 +342,16 @@ mod post {
                     ),
                     None => (None, None, None, None),
                 };
+            let action_owner_uuid = action_server_uuid.map(|_| user.uuid);
             let ai_message_uuid = uuid::Uuid::new_v4();
             sqlx::query(
                 r#"
                 INSERT INTO com_calagopus_chat_messages
                     (uuid, conversation_uuid, sender_uuid, sender_kind, content, input_tokens, output_tokens,
                      ai_action_server_uuid, ai_action_server_name, ai_action_type, ai_action_status,
-                     ai_action_expires_at)
+                     ai_action_expires_at, ai_action_owner_uuid)
                 VALUES ($1, $2, NULL, 'ai', $3, $4, $5, $6, $7, $8, $9,
-                        CASE WHEN $6::uuid IS NULL THEN NULL ELSE now() + INTERVAL '5 minutes' END)
+                        CASE WHEN $6::uuid IS NULL THEN NULL ELSE now() + INTERVAL '5 minutes' END, $10)
                 "#,
             )
             .bind(ai_message_uuid)
@@ -306,6 +363,7 @@ mod post {
             .bind(action_server_name)
             .bind(action_type)
             .bind(action_status)
+            .bind(action_owner_uuid)
             .execute(state.database.write())
             .await?;
 
@@ -337,23 +395,26 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         conversation_uuid: uuid::Uuid,
+        group_ai: bool,
         tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
         let rows = sqlx::query(
             r#"
             SELECT
-                sender_kind,
-                content,
-                ai_action_server_name,
-                ai_action_type,
+                messages.sender_kind,
+                COALESCE(users.username::text, 'Former user') AS sender_username,
+                messages.content,
+                messages.ai_action_server_name,
+                messages.ai_action_type,
                 CASE
-                    WHEN ai_action_status = 'pending' AND ai_action_expires_at <= now()
+                    WHEN messages.ai_action_status = 'pending' AND messages.ai_action_expires_at <= now()
                         THEN 'expired'
-                    ELSE ai_action_status
+                    ELSE messages.ai_action_status
                 END AS ai_action_status
-            FROM com_calagopus_chat_messages
-            WHERE conversation_uuid = $1
-            ORDER BY created_at DESC, uuid DESC
+            FROM com_calagopus_chat_messages AS messages
+            LEFT JOIN users ON users.uuid = messages.sender_uuid
+            WHERE messages.conversation_uuid = $1
+            ORDER BY messages.created_at DESC, messages.uuid DESC
             LIMIT 20
             "#,
         )
@@ -366,6 +427,10 @@ mod post {
             .map(|row| {
                 let sender_kind: String = row.try_get("sender_kind")?;
                 let mut content: String = row.try_get("content")?;
+                if group_ai && sender_kind == "user" {
+                    let sender_username: String = row.try_get("sender_username")?;
+                    content = format!("{sender_username}: {content}");
+                }
 
                 if sender_kind == "ai"
                     && let (Some(action), Some(server), Some(status)) = (
@@ -392,13 +457,14 @@ mod post {
 
         let mut answer = match settings.ai_provider.as_str() {
             "openai_compatible" | "openrouter" | "ollama" => {
-                generate_openai_compatible_reply(state, settings, &history, tool_context).await?
+                generate_openai_compatible_reply(state, settings, &history, group_ai, tool_context)
+                    .await?
             }
             "anthropic" => {
-                generate_anthropic_reply(state, settings, &history, tool_context).await?
+                generate_anthropic_reply(state, settings, &history, group_ai, tool_context).await?
             }
             "google_gemini" => {
-                generate_gemini_reply(state, settings, &history, tool_context).await?
+                generate_gemini_reply(state, settings, &history, group_ai, tool_context).await?
             }
             provider => return Err(anyhow::anyhow!("unsupported AI provider `{provider}`")),
         };
@@ -417,13 +483,18 @@ mod post {
             .and_then(|count| i64::try_from(count).ok())
     }
 
-    fn server_tool_system_prompt(settings: &crate::settings::ExtensionSettingsData) -> String {
+    fn server_tool_system_prompt(
+        settings: &crate::settings::ExtensionSettingsData,
+        group_ai: bool,
+    ) -> String {
         let mut prompt = settings.ai_system_prompt.to_string();
         if settings.ai_server_info_enabled {
             prompt.push_str(
                 "\n\nUse the provided server tools for live information and only discuss servers they return for the current Panel user. Never guess server names, identifiers, or status.",
             );
-            if settings.ai_server_power_enabled {
+            if settings.ai_server_power_enabled
+                && !settings.ai_server_control_api_key.trim().is_empty()
+            {
                 prompt.push_str(
                     " Power tools only prepare a start, stop, or restart request; they do not execute it. Tell the user which server and action are awaiting confirmation, and do not claim the action happened until the user confirms. Do not suggest or simulate console commands, file changes, or other unavailable actions.",
                 );
@@ -437,16 +508,22 @@ mod post {
                 "\n\nYou do not have live access to Panel server tools in this conversation. Do not claim to know a server's current state or to perform a server action.",
             );
         }
+        if group_ai {
+            prompt.push_str(
+                " In this shared group, respond only when the current user explicitly mentions you with @AI. Address the group clearly, do not treat one member's instructions as the wishes of every participant, and only share server information returned by tools after the group access check.",
+            );
+        }
         prompt
     }
 
     fn openai_messages(
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        group_ai: bool,
     ) -> Vec<serde_json::Value> {
         let mut messages = vec![serde_json::json!({
             "role": "system",
-            "content": server_tool_system_prompt(settings),
+            "content": server_tool_system_prompt(settings, group_ai),
         })];
 
         for (sender_kind, content) in history {
@@ -493,6 +570,7 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        group_ai: bool,
         tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
         let endpoint = format!(
@@ -502,9 +580,10 @@ mod post {
         let definitions = ai_tools::definitions(
             settings.ai_server_info_enabled,
             settings.ai_server_power_enabled,
+            !settings.ai_server_control_api_key.trim().is_empty(),
         );
         let tools = ai_tools::openai_definitions(&definitions);
-        let mut messages = openai_messages(settings, history);
+        let mut messages = openai_messages(settings, history, group_ai);
         let mut input_tokens = None;
         let mut output_tokens = None;
         let mut tool_call_count = 0;
@@ -616,6 +695,7 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        group_ai: bool,
         tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
         let mut messages = history
@@ -631,9 +711,10 @@ mod post {
         let definitions = ai_tools::definitions(
             settings.ai_server_info_enabled,
             settings.ai_server_power_enabled,
+            !settings.ai_server_control_api_key.trim().is_empty(),
         );
         let tools = ai_tools::anthropic_definitions(&definitions);
-        let system_prompt = server_tool_system_prompt(settings);
+        let system_prompt = server_tool_system_prompt(settings, group_ai);
         let mut input_tokens = None;
         let mut output_tokens = None;
         let mut tool_call_count = 0;
@@ -751,6 +832,7 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        group_ai: bool,
         tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
         let mut contents = history
@@ -770,9 +852,10 @@ mod post {
         let definitions = ai_tools::definitions(
             settings.ai_server_info_enabled,
             settings.ai_server_power_enabled,
+            !settings.ai_server_control_api_key.trim().is_empty(),
         );
         let tools = ai_tools::gemini_definitions(&definitions);
-        let system_prompt = server_tool_system_prompt(settings);
+        let system_prompt = server_tool_system_prompt(settings, group_ai);
         let mut input_tokens = None;
         let mut output_tokens = None;
         let mut tool_call_count = 0;
@@ -879,6 +962,20 @@ mod post {
         }
 
         Err(anyhow::anyhow!("The AI could not finish the server tool request."))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::explicitly_mentions_ai;
+
+        #[test]
+        fn group_ai_requires_an_explicit_at_ai_mention() {
+            assert!(explicitly_mentions_ai("@AI, can you summarize this?"));
+            assert!(explicitly_mentions_ai("Please ask (@ai)!"));
+            assert!(!explicitly_mentions_ai("I use ai for this."));
+            assert!(!explicitly_mentions_ai("email @ai_team about it"));
+            assert!(!explicitly_mentions_ai("mail ai@example.com"));
+        }
     }
 }
 

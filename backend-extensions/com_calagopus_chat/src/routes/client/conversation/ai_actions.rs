@@ -51,6 +51,39 @@ mod post {
             return Err(ApiResponse::error("Conversation not found.")
                 .with_status(StatusCode::NOT_FOUND));
         }
+        let Some((conversation_kind, conversation_ai_enabled)) =
+            super::super::conversation_info(&state.0, conversation_uuid, user.uuid).await?
+        else {
+            return Err(ApiResponse::error("Conversation not found.")
+                .with_status(StatusCode::NOT_FOUND));
+        };
+        let group_ai = conversation_kind == "group" && conversation_ai_enabled;
+        let group_members: Vec<shared::models::user::User> = if group_ai {
+            let group_member_uuids: Vec<uuid::Uuid> = sqlx::query_scalar(
+                "SELECT user_uuid FROM com_calagopus_chat_members WHERE conversation_uuid = $1",
+            )
+            .bind(conversation_uuid)
+            .fetch_all(state.database.read())
+            .await?;
+            let mut members = Vec::with_capacity(group_member_uuids.len());
+            for member_uuid in group_member_uuids {
+                let Some(member) = shared::models::user::User::by_uuid_optional_cached(
+                    &state.database,
+                    member_uuid,
+                )
+                .await?
+                else {
+                    return Err(ApiResponse::error(
+                        "Could not verify every member of this AI group.",
+                    )
+                    .with_status(StatusCode::BAD_GATEWAY));
+                };
+                members.push(member);
+            }
+            members
+        } else {
+            Vec::new()
+        };
 
         if !data.confirm {
             let status: Option<String> = sqlx::query_scalar(
@@ -64,6 +97,19 @@ mod post {
                   AND conversation_uuid = $2
                   AND sender_kind = 'ai'
                   AND ai_action_status = 'pending'
+                  AND (
+                      ai_action_owner_uuid = $3
+                      OR (
+                          ai_action_owner_uuid IS NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM com_calagopus_chat_conversations AS conversations
+                              WHERE conversations.uuid = $2
+                                AND conversations.kind = 'ai'
+                                AND conversations.created_by = $3
+                          )
+                      )
+                  )
                   AND EXISTS (
                       SELECT 1
                       FROM com_calagopus_chat_members AS members
@@ -101,6 +147,7 @@ mod post {
         if !settings.ai_available()
             || !settings.ai_server_info_enabled
             || !settings.ai_server_power_enabled
+            || settings.ai_server_control_api_key.trim().is_empty()
         {
             let status: Option<String> = sqlx::query_scalar(
                 r#"
@@ -113,6 +160,19 @@ mod post {
                   AND conversation_uuid = $2
                   AND sender_kind = 'ai'
                   AND ai_action_status = 'pending'
+                  AND (
+                      ai_action_owner_uuid = $3
+                      OR (
+                          ai_action_owner_uuid IS NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM com_calagopus_chat_conversations AS conversations
+                              WHERE conversations.uuid = $2
+                                AND conversations.kind = 'ai'
+                                AND conversations.created_by = $3
+                          )
+                      )
+                  )
                   AND EXISTS (
                       SELECT 1
                       FROM com_calagopus_chat_members AS members
@@ -148,6 +208,19 @@ mod post {
               AND sender_kind = 'ai'
               AND ai_action_status = 'pending'
               AND ai_action_expires_at > now()
+              AND (
+                  ai_action_owner_uuid = $3
+                  OR (
+                      ai_action_owner_uuid IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM com_calagopus_chat_conversations AS conversations
+                          WHERE conversations.uuid = $2
+                            AND conversations.kind = 'ai'
+                            AND conversations.created_by = $3
+                      )
+                  )
+              )
               AND EXISTS (
                   SELECT 1
                   FROM com_calagopus_chat_members AS members
@@ -173,6 +246,19 @@ mod post {
                   AND sender_kind = 'ai'
                   AND ai_action_status = 'pending'
                   AND ai_action_expires_at <= now()
+                  AND (
+                      ai_action_owner_uuid = $3
+                      OR (
+                          ai_action_owner_uuid IS NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM com_calagopus_chat_conversations AS conversations
+                              WHERE conversations.uuid = $2
+                                AND conversations.kind = 'ai'
+                                AND conversations.created_by = $3
+                          )
+                      )
+                  )
                   AND EXISTS (
                       SELECT 1
                       FROM com_calagopus_chat_members AS members
@@ -254,7 +340,32 @@ mod post {
             ip: ip.0,
             server_info_enabled: settings.ai_server_info_enabled,
             server_power_enabled: settings.ai_server_power_enabled,
+            server_control_api_key: settings.ai_server_control_api_key.as_str(),
+            group_ai,
+            group_members: &group_members,
         };
+        if let Err(error) =
+            ai_tools::require_control_api_key_permission(&tool_context, &server, action_permission)
+                .await
+        {
+            tracing::warn!(
+                conversation_uuid = %conversation_uuid,
+                server_uuid = %server.uuid,
+                "AI server control API key rejected the action: {error:#}"
+            );
+            mark_action_failed(&state.0, message_uuid).await?;
+            return Err(ApiResponse::error(
+                "The configured Panel server-control API key no longer permits this action.",
+            )
+            .with_status(StatusCode::FORBIDDEN));
+        }
+        if !ai_tools::server_visible_to_group(&tool_context, server.uuid).await? {
+            mark_action_failed(&state.0, message_uuid).await?;
+            return Err(ApiResponse::error(
+                "The server is no longer visible to every member of this AI group.",
+            )
+            .with_status(StatusCode::FORBIDDEN));
+        }
         match ai_tools::client_api_json(
             &tool_context,
             axum::http::Method::POST,

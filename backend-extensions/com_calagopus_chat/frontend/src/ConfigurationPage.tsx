@@ -84,6 +84,7 @@ export default function ConfigurationPage() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [serverControlApiKeyConfigured, setServerControlApiKeyConfigured] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
     inputTokens: 0,
     outputTokens: 0,
@@ -114,9 +115,11 @@ export default function ConfigurationPage() {
       aiModel: 'gpt-4o-mini',
       aiSystemPrompt: 'You are the Calagopus Chat assistant. Be helpful, clear, and concise.',
       aiApiKey: '',
+      serverControlApiKey: '',
       aiServerInfoEnabled: false,
       aiServerPowerEnabled: false,
       floatingWidgetEnabled: true,
+      clearServerControlApiKey: false,
       clearApiKey: false,
     },
     validateInputOnBlur: true,
@@ -136,12 +139,15 @@ export default function ConfigurationPage() {
           aiModel: settings.aiModel,
           aiSystemPrompt: settings.aiSystemPrompt,
           aiApiKey: '',
+          serverControlApiKey: '',
           aiServerInfoEnabled: settings.aiServerInfoEnabled,
           aiServerPowerEnabled: settings.aiServerPowerEnabled,
           floatingWidgetEnabled: settings.floatingWidgetEnabled,
+          clearServerControlApiKey: false,
           clearApiKey: false,
         });
         setApiKeyConfigured(settings.apiKeyConfigured);
+        setServerControlApiKeyConfigured(settings.serverControlApiKeyConfigured);
       })
       .catch((error) => {
         if (active) addToast(httpErrorToHuman(error), 'error');
@@ -161,7 +167,11 @@ export default function ConfigurationPage() {
       await updateAdminSettings(values);
       if (values.clearApiKey) setApiKeyConfigured(false);
       else if (values.aiApiKey.trim()) setApiKeyConfigured(true);
+      if (values.clearServerControlApiKey) setServerControlApiKeyConfigured(false);
+      else if (values.serverControlApiKey.trim()) setServerControlApiKeyConfigured(true);
       form.setFieldValue('aiApiKey', '');
+      form.setFieldValue('serverControlApiKey', '');
+      form.setFieldValue('clearServerControlApiKey', false);
       form.setFieldValue('clearApiKey', false);
       addToast(tExt('settings.settingsSaved', {}), 'success');
     } catch (error) {
@@ -170,6 +180,10 @@ export default function ConfigurationPage() {
       setSaving(false);
     }
   };
+
+  const hasPanelControlApiKey =
+    !form.values.clearServerControlApiKey &&
+    (serverControlApiKeyConfigured || form.values.serverControlApiKey.trim().length > 0);
 
   const loadModels = async () => {
     setLoadingModels(true);
@@ -241,10 +255,36 @@ export default function ConfigurationPage() {
                 }}
               />
 
+              <PasswordInput
+                label={tExt('settings.serverControlApiKey', {})}
+                description={tExt('settings.serverControlApiKeyDescription', {})}
+                leftSection={<FontAwesomeIcon icon={faLock} aria-hidden='true' />}
+                autoComplete='new-password'
+                placeholder={
+                  serverControlApiKeyConfigured
+                    ? '••••••••••••••••'
+                    : tExt('settings.enterServerControlApiKey', {})
+                }
+                {...form.getInputProps('serverControlApiKey')}
+              />
+
+              <Checkbox
+                label={tExt('settings.removeServerControlApiKey', {})}
+                disabled={!serverControlApiKeyConfigured}
+                checked={form.values.clearServerControlApiKey}
+                onChange={(event) => {
+                  const clearKey = event.currentTarget.checked;
+                  form.setFieldValue('clearServerControlApiKey', clearKey);
+                  if (clearKey && !form.values.serverControlApiKey.trim()) {
+                    form.setFieldValue('aiServerPowerEnabled', false);
+                  }
+                }}
+              />
+
               <Switch
                 label={tExt('settings.enableServerPower', {})}
                 description={tExt('settings.enableServerPowerDescription', {})}
-                disabled={!form.values.aiServerInfoEnabled}
+                disabled={!form.values.aiServerInfoEnabled || !hasPanelControlApiKey}
                 {...form.getInputProps('aiServerPowerEnabled', { type: 'checkbox' })}
               />
 

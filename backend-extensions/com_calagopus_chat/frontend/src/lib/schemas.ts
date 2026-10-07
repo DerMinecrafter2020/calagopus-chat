@@ -10,6 +10,7 @@ export const userSummarySchema = z.object({
 export const conversationSchema = z.object({
   uuid: z.string().uuid(),
   kind: conversationKindSchema,
+  aiEnabled: z.boolean(),
   title: z.string().nullable(),
   createdAt: z.coerce.date(),
   lastMessage: z.string().nullable(),
@@ -22,6 +23,7 @@ export const conversationSchema = z.object({
 export const conversationRefSchema = z.object({
   uuid: z.string().uuid(),
   kind: conversationKindSchema,
+  aiEnabled: z.boolean(),
   title: z.string().nullable(),
 });
 
@@ -30,6 +32,7 @@ export const aiServerActionSchema = z.object({
   serverName: z.string(),
   status: z.enum(['pending', 'executing', 'confirmed', 'cancelled', 'failed', 'expired']),
   expiresAt: z.coerce.date(),
+  canConfirm: z.boolean(),
 });
 
 export const messageSchema = z.object({
@@ -55,6 +58,7 @@ export const usersResponseSchema = z.object({
 
 export const createConversationSchema = z.object({
   kind: conversationKindSchema,
+  aiEnabled: z.boolean(),
   title: z.string().optional(),
   participantUuids: z.array(z.string().uuid()),
 });
@@ -99,6 +103,7 @@ export const adminSettingsSchema = z.object({
   aiModel: z.string(),
   aiSystemPrompt: z.string(),
   apiKeyConfigured: z.boolean(),
+  serverControlApiKeyConfigured: z.boolean(),
   aiServerInfoEnabled: z.boolean(),
   aiServerPowerEnabled: z.boolean(),
   floatingWidgetEnabled: z.boolean(),
@@ -132,9 +137,11 @@ export const updateAdminSettingsSchema = z.object({
   aiModel: z.string().trim().min(1).max(128),
   aiSystemPrompt: z.string().trim().min(1).max(4000),
   aiApiKey: z.string().max(4096),
+  serverControlApiKey: z.string().max(4096),
   aiServerInfoEnabled: z.boolean(),
   aiServerPowerEnabled: z.boolean(),
   floatingWidgetEnabled: z.boolean(),
+  clearServerControlApiKey: z.boolean(),
   clearApiKey: z.boolean(),
 });
 

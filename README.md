@@ -7,14 +7,16 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 - A compact bottom-right chat bar when minimized and a responsive, resizable conversation window on larger screens that adapts to mobile viewports, keyboards, and safe areas.
 - A standalone Chat page in the Panel account sidebar; administrators choose either the floating widget or page-only mode.
 - Direct messages and named group chats between active panel users.
+- Optional AI-enabled group chats that answer only when a member explicitly mentions `@AI`.
 - Remove a conversation from your own chat list without deleting it for other participants.
 - Conversation history and unread message counts persisted in PostgreSQL.
 - AI chats with OpenAI-compatible providers (including OpenRouter and custom endpoints), Anthropic, Google Gemini, and Ollama.
 - Optional AI server information tools and start/stop/restart requests, gated by admin settings, provider tool-calling support, and the current user's Panel server permissions.
+- Power requests also require a separate encrypted Panel user API key as a permission cap; it cannot grant a user more rights than their own per-server permissions.
 - AI replies render standard Markdown emphasis and block quotes instead of showing formatting markers literally.
 - Provider-reported input/output token totals for AI requests made by Calagopus Chat.
 - Admin model discovery with a searchable model selector, plus a per-user Enter-to-send preference.
-- A **Chat settings** page in the admin sidebar (also available from **Admin → Extensions → Calagopus Chat**) for the AI URL, model, API key, system prompt, token-usage totals, and changelog.
+- A **Chat settings** page in the admin sidebar (also available from **Admin → Extensions → Calagopus Chat**) for the AI URL, model, provider key, Panel server-control key, system prompt, token-usage totals, and changelog.
 - API keys are stored through Calagopus's encrypted extension-settings API; chat content and API keys are not written to activity-log payloads.
 - Mantine components and theme CSS variables keep the widget aligned with the active light/dark theme and custom panel palettes.
 - UI strings use Calagopus's translation system, with English fallbacks when a localized extension string is unavailable.
@@ -43,7 +45,7 @@ The GitHub Actions workflow in `.github/workflows/release.yml` automatically che
 
 To publish automatically, update both package versions to the same unused version, commit the change, and push it to `main` or `master`. The runner derives the matching version tag and creates the release after the preflight builds pass. Ordinary code pushes without a version bump do not create duplicate releases. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md).
 
-For the current `0.1.9` version, a push to the default branch will create `v0.1.9` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
+For the current `0.1.10` version, a push to the default branch will create `v0.1.10` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
 
 After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
 
@@ -55,9 +57,9 @@ After the workflow succeeds, download the `.c7s.zip` file from the GitHub Releas
 4. Enter the provider’s base URL and API key; Ollama can run without one.
 5. Load the provider’s available models and select one, or enter a model ID manually.
 6. Adjust the system prompt and enable AI chat.
-7. Optionally allow server information and power-action tools in Chat settings. Power actions always require in-chat confirmation.
+7. To enable server power actions, enter a separate Panel user API key whose owner can access the target servers and whose scopes include `control.start`, `control.stop`, and `control.restart`. Keep the server-information and power-action settings enabled as desired.
 
-OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. Server tools require a model that supports function calling. The AI can only see servers the current user can access, and start/stop/restart requests are checked against their per-server permissions again when confirmed. Arbitrary console commands and file operations are not exposed. Token totals reflect only Calagopus Chat calls, using usage fields reported by the configured provider; they are not account-wide billing totals. Providers that omit usage details are excluded. The API key is never returned by the admin settings endpoint; leave its field blank to preserve the saved key or select **Remove the stored API key** to clear it.
+OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. Server tools require a model that supports function calling. The AI can only see servers the current user can access. Start/stop/restart requests require both the caller's per-server permission and the configured Panel API key's scope, and are rechecked at confirmation. AI-enabled groups respond only when a user explicitly mentions `@AI`; the recent group conversation is then sent to the configured AI provider for context. Arbitrary console commands and file operations are not exposed. Token totals reflect only Calagopus Chat calls, using usage fields reported by the configured provider; they are not account-wide billing totals. Providers that omit usage details are excluded. Neither API key is returned by the admin settings endpoint; leave each field blank to preserve its saved key or select its **Remove** option to clear it.
 
 ## Official documentation
 

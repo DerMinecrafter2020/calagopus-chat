@@ -46,8 +46,8 @@ import postMessage from './api/sendMessage.ts';
 import type { ChatMessage, ChatUser, Conversation, ConversationKind } from './lib/schemas.ts';
 import { useExtTranslations } from './translations.ts';
 
-function conversationIcon(kind: ConversationKind) {
-  if (kind === 'ai') return faRobot;
+function conversationIcon(kind: ConversationKind, aiEnabled = false) {
+  if (kind === 'ai' || aiEnabled) return faRobot;
   if (kind === 'group') return faUsers;
   return faUser;
 }
@@ -92,6 +92,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
   const [usersLoading, setUsersLoading] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [groupTitle, setGroupTitle] = useState('');
+  const [groupAiEnabled, setGroupAiEnabled] = useState(false);
   const [creating, setCreating] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deletingConversationUuid, setDeletingConversationUuid] = useState<string | null>(null);
@@ -328,16 +329,18 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     kind: ConversationKind,
     participantUuids: string[] = [],
     title?: string,
+    aiEnabled = false,
   ) => {
     setCreating(true);
     try {
-      const response = await createConversation({ kind, participantUuids, title });
+      const response = await createConversation({ kind, participantUuids, title, aiEnabled });
       await loadConversations(true);
       setMessages([]);
       setActiveConversationUuid(response.conversation.uuid);
       setComposeMode(null);
       setSelectedUsers([]);
       setGroupTitle('');
+      setGroupAiEnabled(false);
       setSearch('');
     } catch (error) {
       addToast(httpErrorToHuman(error), 'error');
@@ -383,6 +386,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     setUsers([]);
     setSelectedUsers([]);
     setGroupTitle('');
+    setGroupAiEnabled(false);
   };
 
   const confirmDeleteChat = async () => {
@@ -541,7 +545,11 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
             )}
             <span className='calagopus-chat-brand-icon'>
               <FontAwesomeIcon
-                icon={activeConversation ? conversationIcon(activeConversation.kind) : faComments}
+                icon={
+                  activeConversation
+                    ? conversationIcon(activeConversation.kind, activeConversation.aiEnabled)
+                    : faComments
+                }
                 aria-hidden='true'
               />
             </span>
@@ -558,7 +566,9 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                   ? tExt('chat.privateAiSubtitle', {})
                   : activeConversationUuid
                     ? activeConversation?.kind === 'group'
-                      ? tExt('chat.groupSubtitle', {})
+                      ? activeConversation.aiEnabled
+                        ? tExt('chat.groupAiSubtitle', {})
+                        : tExt('chat.groupSubtitle', {})
                       : tExt('chat.directSubtitle', {})
                     : composeMode
                       ? tExt('chat.composeSubtitle', {})
@@ -690,9 +700,11 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                   </Tooltip>
                 </div>
               </form>
-              {activeConversation?.kind === 'ai' && !aiAvailable && (
+              {activeConversation?.aiEnabled && !aiAvailable && (
                 <Text className='calagopus-chat-ai-notice' size='xs' c='dimmed'>
-                  {tExt('chat.aiNotConfigured', {})}
+                  {activeConversation.kind === 'ai'
+                    ? tExt('chat.aiNotConfigured', {})
+                    : tExt('chat.aiUnavailable', {})}
                 </Text>
               )}
             </div>
@@ -705,6 +717,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                   onClick={() => {
                     setComposeMode('direct');
                     setSelectedUsers([]);
+                    setGroupAiEnabled(false);
                   }}
                 >
                   {tExt('chat.direct', {})}
@@ -760,6 +773,21 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                       maxLength={80}
                     />
                   )}
+                  {composeMode === 'group' && (
+                    <Stack gap={4}>
+                      <Checkbox
+                        label={tExt('chat.includeAiInGroup', {})}
+                        checked={groupAiEnabled}
+                        disabled={!aiAvailable}
+                        onChange={(event) => setGroupAiEnabled(event.currentTarget.checked)}
+                      />
+                      <Text size='xs' c='dimmed'>
+                        {aiAvailable
+                          ? tExt('chat.groupAiMentionHint', {})
+                          : tExt('chat.aiUnavailable', {})}
+                      </Text>
+                    </Stack>
+                  )}
                   <TextInput
                     aria-label={tExt('chat.searchUsers', {})}
                     placeholder={tPanel('common.input.search', {})}
@@ -806,7 +834,9 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                   </div>
                   {composeMode === 'group' && (
                     <Button
-                      onClick={() => void startConversation('group', selectedUsers, groupTitle)}
+                      onClick={() =>
+                        void startConversation('group', selectedUsers, groupTitle, groupAiEnabled)
+                      }
                       loading={creating}
                       disabled={selectedUsers.length < 2}
                       leftSection={<FontAwesomeIcon icon={faUsers} aria-hidden='true' />}
@@ -848,7 +878,10 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                         }}
                       >
                         <span className='calagopus-chat-row-icon'>
-                          <FontAwesomeIcon icon={conversationIcon(conversation.kind)} aria-hidden='true' />
+                            <FontAwesomeIcon
+                              icon={conversationIcon(conversation.kind, conversation.aiEnabled)}
+                              aria-hidden='true'
+                            />
                         </span>
                         <span className='calagopus-chat-row-copy'>
                           <span className='calagopus-chat-row-title'>
@@ -858,6 +891,11 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                             {getConversationPreview(conversation)}
                           </span>
                         </span>
+                        {conversation.kind === 'group' && conversation.aiEnabled && (
+                          <Badge size='xs' color='violet' variant='light'>
+                            {tExt('chat.ai', {})}
+                          </Badge>
+                        )}
                         {conversation.unreadCount > 0 && (
                           <Badge size='xs' color='blue' variant='filled'>
                             {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
@@ -993,7 +1031,7 @@ function MessageBubble({
               server: pendingAction.serverName,
             })}
           </Text>
-          {pendingAction.status === 'pending' ? (
+          {pendingAction.status === 'pending' && pendingAction.canConfirm ? (
             <>
               <Text size='xs' c='dimmed' mt={4}>
                 {actionStatusText}
@@ -1018,6 +1056,10 @@ function MessageBubble({
                 </Button>
               </Group>
             </>
+          ) : pendingAction.status === 'pending' ? (
+            <Text size='xs' c='dimmed' mt={4}>
+              {tExt('chat.serverActionOnlyRequesterCanConfirm', {})}
+            </Text>
           ) : (
             <Text size='xs' c='dimmed' mt={4}>
               {actionStatusText}

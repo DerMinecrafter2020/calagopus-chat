@@ -24,6 +24,7 @@ impl ConversationKind {
 pub struct ConversationSummary {
     pub uuid: uuid::Uuid,
     pub kind: String,
+    pub ai_enabled: bool,
     pub title: Option<String>,
     pub created_at: DateTime<Utc>,
     pub last_message: Option<String>,
@@ -51,4 +52,5 @@ pub struct PendingActionSummary {
     pub server_name: String,
     pub status: String,
     pub expires_at: DateTime<Utc>,
+    pub can_confirm: bool,
 }
