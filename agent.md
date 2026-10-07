@@ -29,7 +29,7 @@ Start from the current version, `0.1.9`, and count from the rightmost component.
 
 After `9.10.10`, the next version is `10.0.0`; the major component can continue above 10. Do not add leading zeroes. Before a release, update both package version fields, commit the change, and tag that commit with the matching `vMAJOR.MINOR.PATCH` value. Do not reuse or force-move a published release tag.
 
-Before preparing or pushing release changes, inspect both local and remote tags (for example, `git tag --list 'v*'` and `git ls-remote --tags origin`). If the current package version already has a tag, **do not push additional release-worthy changes with that same version**. Bump both manifests to the next unused version first, and update the current-version references in the README, changelog, workflow example, and this file. A tag is immutable release identity: changes after `v0.1.8` belong in `0.1.9`, not in another push of `0.1.8`.
+Before preparing or pushing release changes, inspect both local and remote tags (for example, `git tag --list 'v*'` and `git ls-remote --tags origin`). If the current package version already has a tag, **do not push additional release-worthy changes with that same version**. Bump both manifests to the next unused version first, and update the current-version references in the README, changelog, workflow example, and this file. Add a `## MAJOR.MINOR.PATCH — YYYY-MM-DD` section with the release changes to `frontend/src/CHANGELOG.md`; the workflow publishes that matching section in the GitHub Release body and fails if it is missing. A tag is immutable release identity: changes after `v0.1.8` belong in `0.1.9`, not in another push of `0.1.8`.
 
 ## GitHub release and `.c7s.zip`
 

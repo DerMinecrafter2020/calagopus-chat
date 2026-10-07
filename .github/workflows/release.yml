@@ -282,6 +282,40 @@ jobs:
           print(f"Validated release version {version}")
           PY
 
+      - name: Prepare version changelog for the GitHub Release
+        id: changelog
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          changelog = Path("backend-extensions/com_calagopus_chat/frontend/src/CHANGELOG.md")
+          lines = changelog.read_text(encoding="utf-8").splitlines()
+          heading = re.compile(rf"^##\s+{re.escape(version)}(?:\s|$)")
+
+          start = next((index for index, line in enumerate(lines) if heading.match(line)), None)
+          if start is None:
+              raise SystemExit(f"No changelog section found for release {version}")
+
+          end = next(
+              (index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")),
+              len(lines),
+          )
+          section = "\n".join(lines[start:end]).strip()
+          if not section:
+              raise SystemExit(f"Changelog section for release {version} is empty")
+
+          release_notes = Path(os.environ["RUNNER_TEMP"]) / "calagopus-chat-release-notes.md"
+          release_notes.write_text(section + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"path={release_notes}\n")
+          print(f"Prepared changelog section for {version}: {release_notes}")
+          PY
+
       - name: Build .c7s.zip archive
         shell: bash
         run: |
@@ -349,6 +383,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           name: Calagopus Chat ${{ needs.prepare.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
+          body_path: ${{ steps.changelog.outputs.path }}
           generate_release_notes: true
           files: com_calagopus_chat.c7s.zip
           fail_on_unmatched_files: true
