@@ -10,6 +10,7 @@ import {
   faUsers,
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import Markdown from 'react-markdown';
 import {
   ActionIcon,
   Badge,
@@ -27,7 +28,7 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { z } from 'zod';
 import { httpErrorToHuman } from '@/api/axios.ts';
 import { useUserSetting } from '@/lib/userSettings.ts';
@@ -55,7 +56,16 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export default function ChatWidget() {
+type ChatWidgetMode = 'widget' | 'page';
+type ChatWidgetSize = { width: number; height: number };
+type ChatWidgetResizeOrigin = ChatWidgetSize & {
+  pointerId: number;
+  pointerX: number;
+  pointerY: number;
+};
+
+export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode } = {}) {
+  const isPage = mode === 'page';
   const { user } = useAuth();
   const { addToast } = useToast();
   const { t: tExt } = useExtTranslations();
@@ -65,9 +75,10 @@ export default function ChatWidget() {
     z.boolean(),
     true,
   );
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(isPage);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [aiAvailable, setAiAvailable] = useState(false);
+  const [floatingWidgetEnabled, setFloatingWidgetEnabled] = useState<boolean | null>(null);
   const [activeConversationUuid, setActiveConversationUuid] = useState<string | null>(null);
   const activeConversationUuidRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -86,9 +97,51 @@ export default function ChatWidget() {
   const [deletingConversationUuid, setDeletingConversationUuid] = useState<string | null>(null);
   const [processingServerActionMessageUuid, setProcessingServerActionMessageUuid] =
     useState<string | null>(null);
+  const [floatingSize, setFloatingSize] = useState<ChatWidgetSize | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<HTMLElement | null>(null);
+  const resizeOriginRef = useRef<ChatWidgetResizeOrigin | null>(null);
   activeConversationUuidRef.current = activeConversationUuid;
+
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (isPage || window.innerWidth < 768) return;
+
+    const shell = widgetRef.current?.querySelector('.calagopus-chat-shell');
+    const bounds = shell?.getBoundingClientRect();
+    if (!bounds) return;
+
+    resizeOriginRef.current = {
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      width: bounds.width,
+      height: bounds.height,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const origin = resizeOriginRef.current;
+    if (!origin || origin.pointerId !== event.pointerId) return;
+
+    const maxWidth = Math.max(340, Math.min(window.innerWidth - 32, 1000));
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const maxHeight = Math.max(430, Math.min(viewportHeight - 32, 1000));
+    setFloatingSize({
+      width: Math.round(Math.min(maxWidth, Math.max(340, origin.width + origin.pointerX - event.clientX))),
+      height: Math.round(Math.min(maxHeight, Math.max(430, origin.height + origin.pointerY - event.clientY))),
+    });
+  };
+
+  const endResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (resizeOriginRef.current?.pointerId !== event.pointerId) return;
+
+    resizeOriginRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -163,6 +216,7 @@ export default function ChatWidget() {
         const response = await getConversations();
         setConversations(response.conversations);
         setAiAvailable(response.aiAvailable);
+        setFloatingWidgetEnabled(response.floatingWidgetEnabled);
       } catch (error) {
         if (!silent) addToast(httpErrorToHuman(error), 'error');
       }
@@ -181,6 +235,7 @@ export default function ChatWidget() {
         if (!active) return;
         setConversations(response.conversations);
         setAiAvailable(response.aiAvailable);
+        setFloatingWidgetEnabled(response.floatingWidgetEnabled);
       } catch (error) {
         if (active && !silent) addToast(httpErrorToHuman(error), 'error');
       } finally {
@@ -392,15 +447,31 @@ export default function ChatWidget() {
     }
   };
 
-  if (!user) return null;
+  if (!user || (!isPage && floatingWidgetEnabled === false)) return null;
+
+  if (isPage && floatingWidgetEnabled !== false) {
+    return floatingWidgetEnabled === null ? (
+      <Group justify='center' py='xl'>
+        <Loader size='sm' />
+        <Text size='sm' c='dimmed'>{tExt('chat.loadingPageMode', {})}</Text>
+      </Group>
+    ) : (
+      <Paper withBorder radius='md' p='lg' className='calagopus-chat-page-mode-notice'>
+        <Stack gap='xs'>
+          <Text fw={700}>{tExt('chat.pageModeUnavailableTitle', {})}</Text>
+          <Text size='sm' c='dimmed'>{tExt('chat.pageModeUnavailableDescription', {})}</Text>
+        </Stack>
+      </Paper>
+    );
+  }
 
   return (
     <aside
       ref={widgetRef}
-      className={`calagopus-chat-widget${expanded ? ' is-expanded' : ''}`}
+      className={`calagopus-chat-widget${expanded || isPage ? ' is-expanded' : ''}${isPage ? ' is-page' : ''}`}
       aria-label={tExt('chat.brand', {})}
     >
-      {!expanded ? (
+      {!expanded && !isPage ? (
         <button
           type='button'
           className='calagopus-chat-collapsed'
@@ -435,7 +506,24 @@ export default function ChatWidget() {
           )}
         </button>
       ) : (
-        <div className='calagopus-chat-shell'>
+        <div
+          className='calagopus-chat-shell'
+          style={!isPage && floatingSize ? { width: floatingSize.width, height: floatingSize.height } : undefined}
+        >
+          {!isPage && (
+            <button
+              type='button'
+              className='calagopus-chat-resize-handle'
+              aria-label={tExt('chat.resizeWindow', {})}
+              title={tExt('chat.resizeWindow', {})}
+              onPointerDown={startResize}
+              onPointerMove={moveResize}
+              onPointerUp={endResize}
+              onPointerCancel={endResize}
+            >
+              <span aria-hidden='true' />
+            </button>
+          )}
           <header className='calagopus-chat-header'>
             {(activeConversationUuid || composeMode) && (
               <Tooltip label={tExt('chat.back', {})}>
@@ -477,6 +565,16 @@ export default function ChatWidget() {
                       : tExt('chat.listSubtitle', {})}
               </Text>
             </div>
+            {unreadCount > 0 && (
+              <Badge
+                size='sm'
+                color='blue'
+                variant='filled'
+                aria-label={tExt('chat.unread', { count: unreadCount })}
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Badge>
+            )}
             {!activeConversationUuid && !composeMode && (
               <Tooltip label={tExt('chat.newConversation', {})}>
                 <ActionIcon
@@ -488,15 +586,17 @@ export default function ChatWidget() {
                 </ActionIcon>
               </Tooltip>
             )}
-            <Tooltip label={tExt('chat.minimize', {})}>
-              <ActionIcon
-                variant='subtle'
-                aria-label={tExt('chat.minimize', {})}
-                onClick={() => setExpanded(false)}
-              >
-                <FontAwesomeIcon icon={faMinus} aria-hidden='true' />
-              </ActionIcon>
-            </Tooltip>
+            {!isPage && (
+              <Tooltip label={tExt('chat.minimize', {})}>
+                <ActionIcon
+                  variant='subtle'
+                  aria-label={tExt('chat.minimize', {})}
+                  onClick={() => setExpanded(false)}
+                >
+                  <FontAwesomeIcon icon={faMinus} aria-hidden='true' />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </header>
 
           {activeConversationUuid ? (
@@ -871,9 +971,15 @@ function MessageBubble({
       )}
       {message.content.trim().length > 0 && (
         <Paper withBorder radius='md' p='xs' className='calagopus-chat-message-paper'>
-          <Text size='sm' className='calagopus-chat-message-text' style={{ whiteSpace: 'pre-wrap' }}>
-            {message.content}
-          </Text>
+          {message.isAi ? (
+            <div className='calagopus-chat-message-markdown'>
+              <Markdown>{message.content}</Markdown>
+            </div>
+          ) : (
+            <Text size='sm' className='calagopus-chat-message-text' style={{ whiteSpace: 'pre-wrap' }}>
+              {message.content}
+            </Text>
+          )}
         </Paper>
       )}
       <Text className='calagopus-chat-message-time' size='xs' c='dimmed'>

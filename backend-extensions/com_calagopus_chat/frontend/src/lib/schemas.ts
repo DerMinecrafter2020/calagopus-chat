@@ -46,6 +46,7 @@ export const messageSchema = z.object({
 export const conversationsResponseSchema = z.object({
   conversations: z.array(conversationSchema),
   aiAvailable: z.boolean(),
+  floatingWidgetEnabled: z.boolean(),
 });
 
 export const usersResponseSchema = z.object({
@@ -100,6 +101,7 @@ export const adminSettingsSchema = z.object({
   apiKeyConfigured: z.boolean(),
   aiServerInfoEnabled: z.boolean(),
   aiServerPowerEnabled: z.boolean(),
+  floatingWidgetEnabled: z.boolean(),
 });
 
 export const tokenUsageSchema = z.object({
@@ -132,6 +134,7 @@ export const updateAdminSettingsSchema = z.object({
   aiApiKey: z.string().max(4096),
   aiServerInfoEnabled: z.boolean(),
   aiServerPowerEnabled: z.boolean(),
+  floatingWidgetEnabled: z.boolean(),
   clearApiKey: z.boolean(),
 });
 

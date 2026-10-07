@@ -464,11 +464,29 @@ mod post {
     ) -> Result<serde_json::Value, anyhow::Error> {
         let response = request.send().await?;
         let status = response.status();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown")
+            .to_string();
         if !status.is_success() {
-            return Err(anyhow::anyhow!("AI provider returned HTTP {status}"));
+            return Err(anyhow::anyhow!(
+                "AI provider returned HTTP {status} (content type: {content_type})"
+            ));
         }
 
-        Ok(response.json().await?)
+        let body = response.bytes().await?;
+        serde_json::from_slice(&body).map_err(|error| {
+            tracing::warn!(
+                http_status = %status,
+                content_type = %content_type,
+                "AI provider returned invalid JSON: {error}"
+            );
+            anyhow::anyhow!(
+                "AI provider returned an invalid JSON response (HTTP {status}, content type: {content_type}): {error}"
+            )
+        })
     }
 
     async fn generate_openai_compatible_reply(

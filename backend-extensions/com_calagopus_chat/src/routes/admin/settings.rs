@@ -24,6 +24,7 @@ mod get {
         api_key_configured: bool,
         ai_server_info_enabled: bool,
         ai_server_power_enabled: bool,
+        floating_widget_enabled: bool,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -75,6 +76,7 @@ mod get {
                 api_key_configured: !settings.ai_api_key.trim().is_empty(),
                 ai_server_info_enabled: settings.ai_server_info_enabled,
                 ai_server_power_enabled: settings.ai_server_power_enabled,
+                floating_widget_enabled: settings.floating_widget_enabled,
             },
             token_usage: TokenUsageResponse {
                 input_tokens: usage.try_get("input_tokens")?,
@@ -90,6 +92,10 @@ mod put {
     use super::*;
     use url::Url;
 
+    fn default_floating_widget_enabled() -> bool {
+        true
+    }
+
     #[derive(ToSchema, Deserialize)]
     pub struct PayloadData {
         ai_enabled: bool,
@@ -102,6 +108,8 @@ mod put {
         ai_server_info_enabled: bool,
         #[serde(default)]
         ai_server_power_enabled: bool,
+        #[serde(default = "default_floating_widget_enabled")]
+        floating_widget_enabled: bool,
         #[serde(default)]
         clear_api_key: bool,
     }
@@ -165,6 +173,7 @@ mod put {
             extension_settings.ai_system_prompt = ai_system_prompt.into();
             extension_settings.ai_server_info_enabled = data.ai_server_info_enabled;
             extension_settings.ai_server_power_enabled = data.ai_server_power_enabled;
+            extension_settings.floating_widget_enabled = data.floating_widget_enabled;
 
             if data.clear_api_key {
                 extension_settings.ai_api_key = compact_str::CompactString::default();
@@ -184,6 +193,7 @@ mod put {
                     "ai_provider": ai_provider,
                     "ai_server_info_enabled": data.ai_server_info_enabled,
                     "ai_server_power_enabled": data.ai_server_power_enabled,
+                    "floating_widget_enabled": data.floating_widget_enabled,
                     "api_key_updated": api_key_updated,
                 }),
             )

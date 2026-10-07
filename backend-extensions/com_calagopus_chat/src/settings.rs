@@ -20,6 +20,7 @@ pub struct ExtensionSettingsData {
     pub ai_system_prompt: compact_str::CompactString,
     pub ai_server_info_enabled: bool,
     pub ai_server_power_enabled: bool,
+    pub floating_widget_enabled: bool,
 }
 
 impl Default for ExtensionSettingsData {
@@ -34,6 +35,7 @@ impl Default for ExtensionSettingsData {
                 .into(),
             ai_server_info_enabled: false,
             ai_server_power_enabled: false,
+            floating_widget_enabled: true,
         }
     }
 }
@@ -74,6 +76,10 @@ impl SettingsSerializeExt for ExtensionSettingsData {
             .write_raw_setting(
                 "ai_server_power_enabled",
                 self.ai_server_power_enabled.to_compact_string(),
+            )
+            .write_raw_setting(
+                "floating_widget_enabled",
+                self.floating_widget_enabled.to_compact_string(),
             );
 
         Ok(serializer
@@ -123,6 +129,10 @@ impl SettingsDeserializeExt for ExtensionSettingsDataDeserializer {
                 .take_raw_setting("ai_server_power_enabled")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(false),
+            floating_widget_enabled: deserializer
+                .take_raw_setting("floating_widget_enabled")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(true),
         }))
     }
 }

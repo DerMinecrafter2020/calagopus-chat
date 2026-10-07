@@ -369,26 +369,64 @@ pub(super) async fn client_api_json(
         )
         .await?;
     let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
     let body = to_bytes(response.into_body(), 1024 * 1024).await?;
     if body.is_empty() {
         if status.is_success() {
             return Ok(Value::Null);
         }
-        return Err(anyhow::anyhow!("Panel server request failed with HTTP {status}."));
+        return Err(anyhow::anyhow!(
+            "Panel server request failed with HTTP {status} (content type: {content_type})."
+        ));
     }
 
-    let response: Value = serde_json::from_slice(&body)?;
     if !status.is_success() {
+        let response = serde_json::from_slice::<Value>(&body).ok();
         let error = response
-            .get("errors")
+            .as_ref()
+            .and_then(|response| response.get("errors"))
             .and_then(Value::as_array)
             .and_then(|errors| errors.first())
             .and_then(Value::as_str)
-            .unwrap_or("Panel server request failed.");
-        return Err(anyhow::anyhow!("{error}"));
+            .or_else(|| {
+                response
+                    .as_ref()
+                    .and_then(|response| response.get("error"))
+                    .and_then(Value::as_str)
+            })
+            .or_else(|| {
+                response
+                    .as_ref()
+                    .and_then(|response| response.get("message"))
+                    .and_then(Value::as_str)
+            });
+
+        return Err(match error {
+            Some(error) => anyhow::anyhow!("Panel server request failed with HTTP {status}: {error}"),
+            None if response.is_none() => anyhow::anyhow!(
+                "Panel server request failed with HTTP {status} and returned a non-JSON error response (content type: {content_type})."
+            ),
+            None => anyhow::anyhow!(
+                "Panel server request failed with HTTP {status} and did not include a readable error message (content type: {content_type})."
+            ),
+        });
     }
 
-    Ok(response)
+    serde_json::from_slice(&body).map_err(|error| {
+        tracing::warn!(
+            http_status = %status,
+            content_type = %content_type,
+            "Panel server request returned invalid JSON: {error}"
+        );
+        anyhow::anyhow!(
+            "Panel server request returned an invalid JSON response (HTTP {status}, content type: {content_type}): {error}"
+        )
+    })
 }
 
 #[cfg(test)]

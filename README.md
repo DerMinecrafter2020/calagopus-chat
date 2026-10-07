@@ -4,12 +4,14 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 
 ## Features
 
-- A compact bottom-right chat bar when minimized and a responsive conversation window that adapts to mobile, tablet, and desktop screens, including mobile keyboards and safe areas.
+- A compact bottom-right chat bar when minimized and a responsive, resizable conversation window on larger screens that adapts to mobile viewports, keyboards, and safe areas.
+- A standalone Chat page in the Panel account sidebar; administrators choose either the floating widget or page-only mode.
 - Direct messages and named group chats between active panel users.
 - Remove a conversation from your own chat list without deleting it for other participants.
 - Conversation history and unread message counts persisted in PostgreSQL.
 - AI chats with OpenAI-compatible providers (including OpenRouter and custom endpoints), Anthropic, Google Gemini, and Ollama.
 - Optional AI server information tools and start/stop/restart requests, gated by admin settings, provider tool-calling support, and the current user's Panel server permissions.
+- AI replies render standard Markdown emphasis and block quotes instead of showing formatting markers literally.
 - Provider-reported input/output token totals for AI requests made by Calagopus Chat.
 - Admin model discovery with a searchable model selector, plus a per-user Enter-to-send preference.
 - A **Chat settings** page in the admin sidebar (also available from **Admin → Extensions → Calagopus Chat**) for the AI URL, model, API key, system prompt, token-usage totals, and changelog.

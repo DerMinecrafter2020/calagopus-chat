@@ -116,6 +116,7 @@ export default function ConfigurationPage() {
       aiApiKey: '',
       aiServerInfoEnabled: false,
       aiServerPowerEnabled: false,
+      floatingWidgetEnabled: true,
       clearApiKey: false,
     },
     validateInputOnBlur: true,
@@ -137,6 +138,7 @@ export default function ConfigurationPage() {
           aiApiKey: '',
           aiServerInfoEnabled: settings.aiServerInfoEnabled,
           aiServerPowerEnabled: settings.aiServerPowerEnabled,
+          floatingWidgetEnabled: settings.floatingWidgetEnabled,
           clearApiKey: false,
         });
         setApiKeyConfigured(settings.apiKeyConfigured);
@@ -220,6 +222,12 @@ export default function ConfigurationPage() {
                 label={tExt('settings.enableAi', {})}
                 description={tExt('settings.enableAiDescription', {})}
                 {...form.getInputProps('aiEnabled', { type: 'checkbox' })}
+              />
+
+              <Switch
+                label={tExt('settings.enableFloatingWidget', {})}
+                description={tExt('settings.enableFloatingWidgetDescription', {})}
+                {...form.getInputProps('floatingWidgetEnabled', { type: 'checkbox' })}
               />
 
               <Switch

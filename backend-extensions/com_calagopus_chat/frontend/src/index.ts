@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { createElement, type FC } from 'react';
 import { Extension, type ExtensionContext } from 'shared';
 import './app.css';
+import ChatPage from './ChatPage.tsx';
 import ChatWidget from './ChatWidget.tsx';
 import ConfigurationPage from './ConfigurationPage.tsx';
 import { getExtTranslations } from './translations.ts';
@@ -13,6 +14,13 @@ class CalagopusChatExtension extends Extension {
 
   public initialize(ctx: ExtensionContext): void {
     ctx.extensionRegistry.pages.global.appendComponent(ChatWidget);
+    ctx.extensionRegistry.routes.addAccountRoute({
+      name: () => getExtTranslations().t('chat.sidebarTitle', {}),
+      path: '/calagopus-chat',
+      icon: faComments,
+      element: ChatPage,
+      exact: true,
+    });
     ctx.extensionRegistry.routes.addAdminRoute({
       name: () => getExtTranslations().t('settings.sidebarTitle', {}),
       path: '/calagopus-chat',

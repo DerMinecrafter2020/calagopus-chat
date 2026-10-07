@@ -19,6 +19,7 @@ mod get {
     struct Response {
         conversations: Vec<ConversationSummary>,
         ai_available: bool,
+        floating_widget_enabled: bool,
     }
 
     #[utoipa::path(get, path = "/", responses(
@@ -109,6 +110,7 @@ mod get {
         ApiResponse::new_serialized(Response {
             conversations,
             ai_available: settings.ai_available(),
+            floating_widget_enabled: settings.floating_widget_enabled,
         })
         .ok()
     }

@@ -5,6 +5,11 @@ const translations = defineTranslations({
   translations: {
     chat: {
       brand: 'Calagopus Chat',
+      sidebarTitle: 'Chat',
+      resizeWindow: 'Resize chat window by dragging this corner',
+      loadingPageMode: 'Loading Chat settings…',
+      pageModeUnavailableTitle: 'Chat is using the floating widget',
+      pageModeUnavailableDescription: 'An administrator can turn off the floating widget in Chat settings to make this standalone page the active Chat view.',
       collapsedTitle: 'Chat',
       collapsedSubtitle: 'Calagopus messages',
       open: 'Open chat',
@@ -76,6 +81,8 @@ const translations = defineTranslations({
       description: 'Choose a provider, model, and credentials. AI chat stays unavailable until enabled and the selected provider is configured.',
       enableAi: 'Enable AI chat',
       enableAiDescription: 'Allow panel users to create private AI conversations.',
+      enableFloatingWidget: 'Use the floating Chat widget',
+      enableFloatingWidgetDescription: 'Choose one Chat view for users. Turn this on for the floating widget, or off to use only the dedicated Chat page in the user sidebar.',
       enableServerInfo: 'Allow AI to read server information',
       enableServerInfoDescription: 'Requires servers.read to list and inspect servers. Server names, short identifiers, status, and resource usage for servers the current user can access are sent to the configured provider. The selected model must support tool calling.',
       enableServerPower: 'Allow AI to request server power actions',
