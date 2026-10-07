@@ -1,11 +1,15 @@
 # Calagopus Chat changelog
 
+## 0.1.9 — 2026-10-07
+- Added a standalone Chat page and an exclusive widget/page display setting; users get one active Chat view at a time.
+- Added unread-count badges to both collapsed and expanded chat views.
+- Made the floating chat window resizable on larger screens.
+- Rendered AI Markdown emphasis and block quotes instead of showing raw formatting markers.
+- Improved diagnostics when AI-provider or Panel-tool endpoints return invalid JSON.
+
 ## 0.1.8 — 2026-10-07
 - Added optional AI server-list, live-status, and confirmed start/stop/restart tools, respecting each user's Panel permissions.
 - Added administrator settings for which server tools are available; arbitrary console commands and file operations remain disabled.
-- Rendered AI Markdown formatting so emphasis and quoted text do not show raw asterisk markers.
-- Added unread-count badges to both collapsed and expanded chat views, plus a standalone Chat page in the Panel sidebar; administrators choose either the floating widget or page-only mode.
-- Made the floating chat window resizable on larger screens.
 
 ## 0.1.7 — 2026-10-07
 - Improved phone layouts with safe-area spacing, keyboard-aware chat sizing, and larger touch targets.

@@ -43,7 +43,7 @@ The GitHub Actions workflow in `.github/workflows/release.yml` automatically che
 
 To publish automatically, update both package versions to the same unused version, commit the change, and push it to `main` or `master`. The runner derives the matching version tag and creates the release after the preflight builds pass. Ordinary code pushes without a version bump do not create duplicate releases. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md).
 
-For the current `0.1.8` version, a push to the default branch will create `v0.1.8` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
+For the current `0.1.9` version, a push to the default branch will create `v0.1.9` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
 
 After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
 
