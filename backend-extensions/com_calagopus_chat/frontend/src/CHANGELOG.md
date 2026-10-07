@@ -1,5 +1,9 @@
 # Calagopus Chat changelog
 
+## 0.1.8 — 2026-10-07
+- Added optional AI server-list, live-status, and confirmed start/stop/restart tools, respecting each user's Panel permissions.
+- Added administrator settings for which server tools are available; arbitrary console commands and file operations remain disabled.
+
 ## 0.1.7 — 2026-10-07
 - Improved phone layouts with safe-area spacing, keyboard-aware chat sizing, and larger touch targets.
 

@@ -429,7 +429,8 @@
   }
 
   .calagopus-chat-compose .mantine-Button-root,
-  .calagopus-chat-settings .mantine-Button-root {
+  .calagopus-chat-settings .mantine-Button-root,
+  .calagopus-chat-pending-action .mantine-Button-root {
     min-height: 44px;
   }
 

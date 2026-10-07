@@ -22,6 +22,8 @@ mod get {
         ai_model: String,
         ai_system_prompt: String,
         api_key_configured: bool,
+        ai_server_info_enabled: bool,
+        ai_server_power_enabled: bool,
     }
 
     #[derive(ToSchema, Serialize)]
@@ -71,6 +73,8 @@ mod get {
                 ai_model: settings.ai_model.to_string(),
                 ai_system_prompt: settings.ai_system_prompt.to_string(),
                 api_key_configured: !settings.ai_api_key.trim().is_empty(),
+                ai_server_info_enabled: settings.ai_server_info_enabled,
+                ai_server_power_enabled: settings.ai_server_power_enabled,
             },
             token_usage: TokenUsageResponse {
                 input_tokens: usage.try_get("input_tokens")?,
@@ -94,6 +98,10 @@ mod put {
         ai_model: String,
         ai_system_prompt: String,
         ai_api_key: Option<String>,
+        #[serde(default)]
+        ai_server_info_enabled: bool,
+        #[serde(default)]
+        ai_server_power_enabled: bool,
         #[serde(default)]
         clear_api_key: bool,
     }
@@ -138,6 +146,7 @@ mod put {
             || ai_system_prompt.is_empty()
             || ai_system_prompt.chars().count() > 4000
             || api_key.chars().count() > 4096
+            || (data.ai_server_power_enabled && !data.ai_server_info_enabled)
         {
             return Err(ApiResponse::error("One or more AI settings are outside the allowed limits.")
                 .with_status(StatusCode::BAD_REQUEST));
@@ -154,6 +163,8 @@ mod put {
             extension_settings.ai_base_url = ai_base_url.into();
             extension_settings.ai_model = ai_model.into();
             extension_settings.ai_system_prompt = ai_system_prompt.into();
+            extension_settings.ai_server_info_enabled = data.ai_server_info_enabled;
+            extension_settings.ai_server_power_enabled = data.ai_server_power_enabled;
 
             if data.clear_api_key {
                 extension_settings.ai_api_key = compact_str::CompactString::default();
@@ -171,6 +182,8 @@ mod put {
                     "extension": "com.calagopus.chat",
                     "ai_enabled": data.ai_enabled,
                     "ai_provider": ai_provider,
+                    "ai_server_info_enabled": data.ai_server_info_enabled,
+                    "ai_server_power_enabled": data.ai_server_power_enabled,
                     "api_key_updated": api_key_updated,
                 }),
             )

@@ -18,6 +18,8 @@ pub struct ExtensionSettingsData {
     pub ai_model: compact_str::CompactString,
     pub ai_api_key: compact_str::CompactString,
     pub ai_system_prompt: compact_str::CompactString,
+    pub ai_server_info_enabled: bool,
+    pub ai_server_power_enabled: bool,
 }
 
 impl Default for ExtensionSettingsData {
@@ -30,6 +32,8 @@ impl Default for ExtensionSettingsData {
             ai_api_key: compact_str::CompactString::default(),
             ai_system_prompt: "You are the Calagopus Chat assistant. Be helpful, clear, and concise."
                 .into(),
+            ai_server_info_enabled: false,
+            ai_server_power_enabled: false,
         }
     }
 }
@@ -62,7 +66,15 @@ impl SettingsSerializeExt for ExtensionSettingsData {
             .write_raw_setting("ai_provider", self.ai_provider.clone())
             .write_raw_setting("ai_base_url", self.ai_base_url.clone())
             .write_raw_setting("ai_model", self.ai_model.clone())
-            .write_raw_setting("ai_system_prompt", self.ai_system_prompt.clone());
+            .write_raw_setting("ai_system_prompt", self.ai_system_prompt.clone())
+            .write_raw_setting(
+                "ai_server_info_enabled",
+                self.ai_server_info_enabled.to_compact_string(),
+            )
+            .write_raw_setting(
+                "ai_server_power_enabled",
+                self.ai_server_power_enabled.to_compact_string(),
+            );
 
         Ok(serializer
             .write_raw_encrypted_setting("ai_api_key", self.ai_api_key.clone())
@@ -103,6 +115,14 @@ impl SettingsDeserializeExt for ExtensionSettingsDataDeserializer {
                 .unwrap_or_else(|| {
                     "You are the Calagopus Chat assistant. Be helpful, clear, and concise.".into()
                 }),
+            ai_server_info_enabled: deserializer
+                .take_raw_setting("ai_server_info_enabled")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(false),
+            ai_server_power_enabled: deserializer
+                .take_raw_setting("ai_server_power_enabled")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(false),
         }))
     }
 }

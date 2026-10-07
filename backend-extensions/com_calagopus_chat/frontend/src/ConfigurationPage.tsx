@@ -114,6 +114,8 @@ export default function ConfigurationPage() {
       aiModel: 'gpt-4o-mini',
       aiSystemPrompt: 'You are the Calagopus Chat assistant. Be helpful, clear, and concise.',
       aiApiKey: '',
+      aiServerInfoEnabled: false,
+      aiServerPowerEnabled: false,
       clearApiKey: false,
     },
     validateInputOnBlur: true,
@@ -133,6 +135,8 @@ export default function ConfigurationPage() {
           aiModel: settings.aiModel,
           aiSystemPrompt: settings.aiSystemPrompt,
           aiApiKey: '',
+          aiServerInfoEnabled: settings.aiServerInfoEnabled,
+          aiServerPowerEnabled: settings.aiServerPowerEnabled,
           clearApiKey: false,
         });
         setApiKeyConfigured(settings.apiKeyConfigured);
@@ -216,6 +220,24 @@ export default function ConfigurationPage() {
                 label={tExt('settings.enableAi', {})}
                 description={tExt('settings.enableAiDescription', {})}
                 {...form.getInputProps('aiEnabled', { type: 'checkbox' })}
+              />
+
+              <Switch
+                label={tExt('settings.enableServerInfo', {})}
+                description={tExt('settings.enableServerInfoDescription', {})}
+                checked={form.values.aiServerInfoEnabled}
+                onChange={(event) => {
+                  const enabled = event.currentTarget.checked;
+                  form.setFieldValue('aiServerInfoEnabled', enabled);
+                  if (!enabled) form.setFieldValue('aiServerPowerEnabled', false);
+                }}
+              />
+
+              <Switch
+                label={tExt('settings.enableServerPower', {})}
+                description={tExt('settings.enableServerPowerDescription', {})}
+                disabled={!form.values.aiServerInfoEnabled}
+                {...form.getInputProps('aiServerPowerEnabled', { type: 'checkbox' })}
               />
 
               <SimpleGrid cols={{ base: 1, md: 2 }} spacing='md'>

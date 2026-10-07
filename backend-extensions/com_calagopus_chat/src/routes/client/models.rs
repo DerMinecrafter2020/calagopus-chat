@@ -28,6 +28,7 @@ pub struct ConversationSummary {
     pub created_at: DateTime<Utc>,
     pub last_message: Option<String>,
     pub last_message_at: Option<DateTime<Utc>>,
+    pub last_action_status: Option<String>,
     pub unread_count: i64,
     pub participants: Vec<String>,
 }
@@ -41,4 +42,13 @@ pub struct MessageSummary {
     pub is_ai: bool,
     pub content: String,
     pub created_at: DateTime<Utc>,
+    pub pending_action: Option<PendingActionSummary>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PendingActionSummary {
+    pub action_type: String,
+    pub server_name: String,
+    pub status: String,
+    pub expires_at: DateTime<Utc>,
 }

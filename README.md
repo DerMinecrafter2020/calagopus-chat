@@ -9,6 +9,7 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 - Remove a conversation from your own chat list without deleting it for other participants.
 - Conversation history and unread message counts persisted in PostgreSQL.
 - AI chats with OpenAI-compatible providers (including OpenRouter and custom endpoints), Anthropic, Google Gemini, and Ollama.
+- Optional AI server information tools and start/stop/restart requests, gated by admin settings, provider tool-calling support, and the current user's Panel server permissions.
 - Provider-reported input/output token totals for AI requests made by Calagopus Chat.
 - Admin model discovery with a searchable model selector, plus a per-user Enter-to-send preference.
 - A **Chat settings** page in the admin sidebar (also available from **Admin → Extensions → Calagopus Chat**) for the AI URL, model, API key, system prompt, token-usage totals, and changelog.
@@ -40,7 +41,7 @@ The GitHub Actions workflow in `.github/workflows/release.yml` automatically che
 
 To publish automatically, update both package versions to the same unused version, commit the change, and push it to `main` or `master`. The runner derives the matching version tag and creates the release after the preflight builds pass. Ordinary code pushes without a version bump do not create duplicate releases. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md).
 
-For the current `0.1.7` version, a push to the default branch will create `v0.1.7` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
+For the current `0.1.8` version, a push to the default branch will create `v0.1.8` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
 
 After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
 
@@ -52,8 +53,9 @@ After the workflow succeeds, download the `.c7s.zip` file from the GitHub Releas
 4. Enter the provider’s base URL and API key; Ollama can run without one.
 5. Load the provider’s available models and select one, or enter a model ID manually.
 6. Adjust the system prompt and enable AI chat.
+7. Optionally allow server information and power-action tools in Chat settings. Power actions always require in-chat confirmation.
 
-OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. Token totals reflect only Calagopus Chat calls, using usage fields reported by the configured provider; they are not account-wide billing totals. Providers that omit usage details are excluded. The API key is never returned by the admin settings endpoint; leave its field blank to preserve the saved key or select **Remove the stored API key** to clear it.
+OpenAI-compatible providers use `/chat/completions`; Anthropic and Gemini use their native Messages and `generateContent` APIs. Server tools require a model that supports function calling. The AI can only see servers the current user can access, and start/stop/restart requests are checked against their per-server permissions again when confirmed. Arbitrary console commands and file operations are not exposed. Token totals reflect only Calagopus Chat calls, using usage fields reported by the configured provider; they are not account-wide billing totals. Providers that omit usage details are excluded. The API key is never returned by the admin settings endpoint; leave its field blank to preserve the saved key or select **Remove the stored API key** to clear it.
 
 ## Official documentation
 

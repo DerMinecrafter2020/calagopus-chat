@@ -35,6 +35,7 @@ import { useAuth } from '@/providers/AuthProvider.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import createConversation from './api/createConversation.ts';
+import decideAiServerAction from './api/decideAiServerAction.ts';
 import deleteConversationApi from './api/deleteConversation.ts';
 import getConversations from './api/getConversations.ts';
 import getMessages from './api/getMessages.ts';
@@ -68,6 +69,7 @@ export default function ChatWidget() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [aiAvailable, setAiAvailable] = useState(false);
   const [activeConversationUuid, setActiveConversationUuid] = useState<string | null>(null);
+  const activeConversationUuidRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
@@ -82,8 +84,11 @@ export default function ChatWidget() {
   const [creating, setCreating] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deletingConversationUuid, setDeletingConversationUuid] = useState<string | null>(null);
+  const [processingServerActionMessageUuid, setProcessingServerActionMessageUuid] =
+    useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<HTMLElement | null>(null);
+  activeConversationUuidRef.current = activeConversationUuid;
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -129,6 +134,27 @@ export default function ChatWidget() {
       return conversation.title || conversation.participants.join(', ') || tExt('chat.groupFallback', {});
     }
     return conversation.participants[0] ?? tExt('chat.directFallback', {});
+  };
+  const getConversationPreview = (conversation: Conversation): string => {
+    switch (conversation.lastActionStatus) {
+      case 'pending':
+        return tExt('chat.actionPendingPreview', {});
+      case 'executing':
+        return tExt('chat.serverActionExecuting', {});
+      case 'confirmed':
+        return tExt('chat.serverActionConfirmed', {});
+      case 'cancelled':
+        return tExt('chat.serverActionCancelled', {});
+      case 'failed':
+        return tExt('chat.serverActionFailed', {});
+      case 'expired':
+        return tExt('chat.serverActionExpired', {});
+      default:
+        return conversation.lastMessage ??
+          (conversation.kind === 'ai'
+            ? tExt('chat.composeTitle', {})
+            : tExt('chat.noMessagesPreview', {}));
+    }
   };
 
   const loadConversations = useCallback(
@@ -325,6 +351,47 @@ export default function ChatWidget() {
     }
   };
 
+  const decideServerAction = async (messageUuid: string, confirm: boolean) => {
+    if (!activeConversationUuid || processingServerActionMessageUuid) return;
+
+    setProcessingServerActionMessageUuid(messageUuid);
+    try {
+      const response = await decideAiServerAction(activeConversationUuid, messageUuid, confirm);
+      setMessages((current) =>
+        current.map((message) =>
+          message.uuid === messageUuid && message.pendingAction
+            ? {
+                ...message,
+                pendingAction: { ...message.pendingAction, status: response.status },
+              }
+            : message,
+        ),
+      );
+      addToast(
+        response.status === 'confirmed'
+          ? tExt('chat.serverActionSubmitted', {})
+          : response.status === 'cancelled'
+            ? tExt('chat.serverActionCancelled', {})
+            : response.status === 'expired'
+              ? tExt('chat.serverActionExpired', {})
+              : tExt('chat.serverActionFailed', {}),
+        response.status === 'confirmed' || response.status === 'cancelled' ? 'success' : 'warning',
+      );
+    } catch (error) {
+      addToast(httpErrorToHuman(error), 'error');
+      const conversationUuid = activeConversationUuid;
+      void getMessages(conversationUuid)
+        .then((response) => {
+          setMessages((current) =>
+            activeConversationUuidRef.current === conversationUuid ? response.messages : current,
+          );
+        })
+        .catch(() => undefined);
+    } finally {
+      setProcessingServerActionMessageUuid(null);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -457,6 +524,11 @@ export default function ChatWidget() {
                               ? message.senderUsername
                               : tExt('chat.formerUser', {})
                         }
+                        onServerActionDecision={(confirm) =>
+                          void decideServerAction(message.uuid, confirm)
+                        }
+                        serverActionLoading={processingServerActionMessageUuid === message.uuid}
+                        serverActionDisabled={processingServerActionMessageUuid !== null}
                       />
                     ))}
                   </Stack>
@@ -683,10 +755,7 @@ export default function ChatWidget() {
                             {getConversationTitle(conversation)}
                           </span>
                           <span className='calagopus-chat-row-preview'>
-                            {conversation.lastMessage ??
-                              (conversation.kind === 'ai'
-                                ? tExt('chat.composeTitle', {})
-                                : tExt('chat.noMessagesPreview', {}))}
+                            {getConversationPreview(conversation)}
                           </span>
                         </span>
                         {conversation.unreadCount > 0 && (
@@ -757,11 +826,42 @@ function MessageBubble({
   message,
   own,
   senderLabel,
+  onServerActionDecision,
+  serverActionLoading,
+  serverActionDisabled,
 }: {
   message: ChatMessage;
   own: boolean;
   senderLabel: string;
+  onServerActionDecision: (confirm: boolean) => void;
+  serverActionLoading: boolean;
+  serverActionDisabled: boolean;
 }) {
+  const { t: tExt } = useExtTranslations();
+  const pendingAction = message.pendingAction;
+  const actionLabel = pendingAction
+    ? {
+        start: tExt('chat.serverPowerStart', {}),
+        stop: tExt('chat.serverPowerStop', {}),
+        restart: tExt('chat.serverPowerRestart', {}),
+      }[pendingAction.actionType]
+    : '';
+  const actionStatusText = pendingAction
+    ? {
+        pending: tExt('chat.serverActionConfirmationHint', {
+          time: pendingAction.expiresAt.toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          }),
+        }),
+        executing: tExt('chat.serverActionExecuting', {}),
+        confirmed: tExt('chat.serverActionConfirmed', {}),
+        cancelled: tExt('chat.serverActionCancelled', {}),
+        failed: tExt('chat.serverActionFailed', {}),
+        expired: tExt('chat.serverActionExpired', {}),
+      }[pendingAction.status]
+    : '';
+
   return (
     <div className={`calagopus-chat-message${own ? ' is-own' : ''}${message.isAi ? ' is-ai' : ''}`}>
       {!own && (
@@ -769,14 +869,56 @@ function MessageBubble({
           {senderLabel}
         </Text>
       )}
-      <Paper withBorder radius='md' p='xs' className='calagopus-chat-message-paper'>
-        <Text size='sm' className='calagopus-chat-message-text' style={{ whiteSpace: 'pre-wrap' }}>
-          {message.content}
-        </Text>
-      </Paper>
+      {message.content.trim().length > 0 && (
+        <Paper withBorder radius='md' p='xs' className='calagopus-chat-message-paper'>
+          <Text size='sm' className='calagopus-chat-message-text' style={{ whiteSpace: 'pre-wrap' }}>
+            {message.content}
+          </Text>
+        </Paper>
+      )}
       <Text className='calagopus-chat-message-time' size='xs' c='dimmed'>
         {formatTime(message.createdAt)}
       </Text>
+      {pendingAction && (
+        <Paper withBorder radius='sm' p='sm' className='calagopus-chat-pending-action'>
+          <Text size='xs' fw={600}>
+            {tExt('chat.serverActionPrompt', {
+              action: actionLabel,
+              server: pendingAction.serverName,
+            })}
+          </Text>
+          {pendingAction.status === 'pending' ? (
+            <>
+              <Text size='xs' c='dimmed' mt={4}>
+                {actionStatusText}
+              </Text>
+              <Group gap='xs' mt='xs' wrap='wrap'>
+                <Button
+                  size='xs'
+                  color={pendingAction.actionType === 'start' ? 'green' : 'red'}
+                  loading={serverActionLoading}
+                  disabled={serverActionDisabled}
+                  onClick={() => onServerActionDecision(true)}
+                >
+                  {tExt('chat.confirmServerAction', { action: actionLabel })}
+                </Button>
+                <Button
+                  size='xs'
+                  variant='default'
+                  disabled={serverActionDisabled}
+                  onClick={() => onServerActionDecision(false)}
+                >
+                  {tExt('chat.cancelServerAction', {})}
+                </Button>
+              </Group>
+            </>
+          ) : (
+            <Text size='xs' c='dimmed' mt={4}>
+              {actionStatusText}
+            </Text>
+          )}
+        </Paper>
+      )}
     </div>
   );
 }

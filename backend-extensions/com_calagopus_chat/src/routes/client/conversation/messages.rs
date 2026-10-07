@@ -1,15 +1,19 @@
 use axum::{extract::Path, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use shared::{
-    GetState, Payload,
-    models::{user::GetPermissionManager, user_activity::GetUserActivityLogger, user::GetUser},
+    GetIp, GetState, Payload,
+    models::{
+        user::{GetAuthMethod, GetPermissionManager, GetUser, GetUserImpersonator},
+        user_activity::GetUserActivityLogger,
+    },
     response::{ApiResponse, ApiResponseResult},
 };
 use sqlx::Row;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::routes::client::models::MessageSummary;
+use super::ai_tools;
+use crate::routes::client::models::{MessageSummary, PendingActionSummary};
 
 mod get {
     use super::*;
@@ -52,7 +56,15 @@ mod get {
                 ) AS sender_username,
                 messages.sender_kind = 'ai' AS is_ai,
                 messages.content,
-                messages.created_at
+                messages.created_at,
+                messages.ai_action_server_name,
+                messages.ai_action_type,
+                CASE
+                    WHEN messages.ai_action_status = 'pending'
+                      AND messages.ai_action_expires_at <= now() THEN 'expired'
+                    ELSE messages.ai_action_status
+                END AS ai_action_status,
+                messages.ai_action_expires_at
             FROM com_calagopus_chat_messages AS messages
             LEFT JOIN users ON users.uuid = messages.sender_uuid
             WHERE messages.conversation_uuid = $1
@@ -74,6 +86,25 @@ mod get {
         let mut messages = rows
             .into_iter()
             .map(|row| {
+                let pending_action = match (
+                    row.try_get::<Option<String>, _>("ai_action_type")?,
+                    row.try_get::<Option<String>, _>("ai_action_server_name")?,
+                    row.try_get::<Option<String>, _>("ai_action_status")?,
+                    row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(
+                        "ai_action_expires_at",
+                    )?,
+                ) {
+                    (Some(action_type), Some(server_name), Some(status), Some(expires_at)) => {
+                        Some(PendingActionSummary {
+                            action_type,
+                            server_name,
+                            status,
+                            expires_at,
+                        })
+                    }
+                    _ => None,
+                };
+
                 Ok(MessageSummary {
                     uuid: row.try_get("uuid")?,
                     conversation_uuid: row.try_get("conversation_uuid")?,
@@ -82,6 +113,7 @@ mod get {
                     is_ai: row.try_get("is_ai")?,
                     content: row.try_get("content")?,
                     created_at: row.try_get("created_at")?,
+                    pending_action,
                 })
             })
             .collect::<Result<Vec<_>, sqlx::Error>>()?;
@@ -109,6 +141,29 @@ mod post {
         content: String,
         input_tokens: Option<i64>,
         output_tokens: Option<i64>,
+        pending_action: Option<ai_tools::PendingPowerAction>,
+    }
+
+    const MAX_TOOL_ROUNDS: usize = 4;
+    const MAX_TOOL_CALLS_PER_TURN: usize = 8;
+
+    fn accumulate_token_count(total: &mut Option<i64>, next: Option<i64>) {
+        if let Some(next) = next {
+            *total = Some((*total).unwrap_or(0).saturating_add(next));
+        }
+    }
+
+    fn pending_action_reply(
+        action: ai_tools::PendingPowerAction,
+        input_tokens: Option<i64>,
+        output_tokens: Option<i64>,
+    ) -> AiReply {
+        AiReply {
+            content: String::new(),
+            input_tokens,
+            output_tokens,
+            pending_action: Some(action),
+        }
     }
 
     #[utoipa::path(post, path = "/", params(
@@ -121,6 +176,9 @@ mod post {
         user: GetUser,
         permissions: GetPermissionManager,
         activity_logger: GetUserActivityLogger,
+        auth_method: GetAuthMethod,
+        user_impersonator: GetUserImpersonator,
+        ip: GetIp,
         Path(conversation_uuid): Path<uuid::Uuid>,
         Payload(data): Payload<PayloadData>,
     ) -> ApiResponseResult {
@@ -181,10 +239,21 @@ mod post {
             .await;
 
         let ai_message_uuid = if let Some(settings) = ai_settings {
+            let tool_context = ai_tools::ToolContext {
+                state: &state.0,
+                user: &user.0,
+                auth_method: auth_method.0.as_ref(),
+                impersonator: user_impersonator.0.as_ref().map(|impersonator| &impersonator.0),
+                permissions: &permissions.0,
+                ip: ip.0,
+                server_info_enabled: settings.ai_server_info_enabled,
+                server_power_enabled: settings.ai_server_power_enabled,
+            };
             let answer = match generate_ai_reply(
                 &state.0,
                 &settings,
                 conversation_uuid,
+                &tool_context,
             )
             .await
             {
@@ -205,13 +274,27 @@ mod post {
                 content,
                 input_tokens,
                 output_tokens,
+                pending_action,
             } = answer;
+            let (action_server_uuid, action_server_name, action_type, action_status) =
+                match pending_action {
+                    Some(action) => (
+                        Some(action.server_uuid),
+                        Some(action.server_name),
+                        Some(action.action.as_str().to_string()),
+                        Some("pending".to_string()),
+                    ),
+                    None => (None, None, None, None),
+                };
             let ai_message_uuid = uuid::Uuid::new_v4();
             sqlx::query(
                 r#"
                 INSERT INTO com_calagopus_chat_messages
-                    (uuid, conversation_uuid, sender_uuid, sender_kind, content, input_tokens, output_tokens)
-                VALUES ($1, $2, NULL, 'ai', $3, $4, $5)
+                    (uuid, conversation_uuid, sender_uuid, sender_kind, content, input_tokens, output_tokens,
+                     ai_action_server_uuid, ai_action_server_name, ai_action_type, ai_action_status,
+                     ai_action_expires_at)
+                VALUES ($1, $2, NULL, 'ai', $3, $4, $5, $6, $7, $8, $9,
+                        CASE WHEN $6::uuid IS NULL THEN NULL ELSE now() + INTERVAL '5 minutes' END)
                 "#,
             )
             .bind(ai_message_uuid)
@@ -219,6 +302,10 @@ mod post {
             .bind(content)
             .bind(input_tokens)
             .bind(output_tokens)
+            .bind(action_server_uuid)
+            .bind(action_server_name)
+            .bind(action_type)
+            .bind(action_status)
             .execute(state.database.write())
             .await?;
 
@@ -250,10 +337,20 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         conversation_uuid: uuid::Uuid,
+        tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
         let rows = sqlx::query(
             r#"
-            SELECT sender_kind, content
+            SELECT
+                sender_kind,
+                content,
+                ai_action_server_name,
+                ai_action_type,
+                CASE
+                    WHEN ai_action_status = 'pending' AND ai_action_expires_at <= now()
+                        THEN 'expired'
+                    ELSE ai_action_status
+                END AS ai_action_status
             FROM com_calagopus_chat_messages
             WHERE conversation_uuid = $1
             ORDER BY created_at DESC, uuid DESC
@@ -267,24 +364,46 @@ mod post {
         let mut history = rows
             .into_iter()
             .map(|row| {
-                Ok((
-                    row.try_get::<String, _>("sender_kind")?,
-                    row.try_get::<String, _>("content")?,
-                ))
+                let sender_kind: String = row.try_get("sender_kind")?;
+                let mut content: String = row.try_get("content")?;
+
+                if sender_kind == "ai"
+                    && let (Some(action), Some(server), Some(status)) = (
+                        row.try_get::<Option<String>, _>("ai_action_type")?,
+                        row.try_get::<Option<String>, _>("ai_action_server_name")?,
+                        row.try_get::<Option<String>, _>("ai_action_status")?,
+                    )
+                {
+                    let summary = format!(
+                        "[Panel server action record: {action} {server}; status: {status}.]"
+                    );
+                    if content.trim().is_empty() {
+                        content = summary;
+                    } else {
+                        content.push_str("\n\n");
+                        content.push_str(&summary);
+                    }
+                }
+
+                Ok((sender_kind, content))
             })
             .collect::<Result<Vec<_>, sqlx::Error>>()?;
         history.reverse();
 
         let mut answer = match settings.ai_provider.as_str() {
             "openai_compatible" | "openrouter" | "ollama" => {
-                generate_openai_compatible_reply(state, settings, &history).await?
+                generate_openai_compatible_reply(state, settings, &history, tool_context).await?
             }
-            "anthropic" => generate_anthropic_reply(state, settings, &history).await?,
-            "google_gemini" => generate_gemini_reply(state, settings, &history).await?,
+            "anthropic" => {
+                generate_anthropic_reply(state, settings, &history, tool_context).await?
+            }
+            "google_gemini" => {
+                generate_gemini_reply(state, settings, &history, tool_context).await?
+            }
             provider => return Err(anyhow::anyhow!("unsupported AI provider `{provider}`")),
         };
         let content = answer.content.trim().chars().take(8000).collect::<String>();
-        if content.is_empty() {
+        if content.is_empty() && answer.pending_action.is_none() {
             return Err(anyhow::anyhow!("AI provider returned an empty answer"));
         }
         answer.content = content;
@@ -298,13 +417,36 @@ mod post {
             .and_then(|count| i64::try_from(count).ok())
     }
 
+    fn server_tool_system_prompt(settings: &crate::settings::ExtensionSettingsData) -> String {
+        let mut prompt = settings.ai_system_prompt.to_string();
+        if settings.ai_server_info_enabled {
+            prompt.push_str(
+                "\n\nUse the provided server tools for live information and only discuss servers they return for the current Panel user. Never guess server names, identifiers, or status.",
+            );
+            if settings.ai_server_power_enabled {
+                prompt.push_str(
+                    " Power tools only prepare a start, stop, or restart request; they do not execute it. Tell the user which server and action are awaiting confirmation, and do not claim the action happened until the user confirms. Do not suggest or simulate console commands, file changes, or other unavailable actions.",
+                );
+            } else {
+                prompt.push_str(
+                    " Server power actions, console commands, and file changes are not available. Do not claim to perform them.",
+                );
+            }
+        } else {
+            prompt.push_str(
+                "\n\nYou do not have live access to Panel server tools in this conversation. Do not claim to know a server's current state or to perform a server action.",
+            );
+        }
+        prompt
+    }
+
     fn openai_messages(
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
     ) -> Vec<serde_json::Value> {
         let mut messages = vec![serde_json::json!({
             "role": "system",
-            "content": settings.ai_system_prompt.as_str(),
+            "content": server_tool_system_prompt(settings),
         })];
 
         for (sender_kind, content) in history {
@@ -333,48 +475,132 @@ mod post {
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
         let endpoint = format!(
             "{}/chat/completions",
             settings.ai_base_url.trim_end_matches('/')
         );
-        let mut request = state.client.post(endpoint).json(&serde_json::json!({
-            "model": settings.ai_model.as_str(),
-            "messages": openai_messages(settings, history),
-            "max_tokens": 1024,
-        }));
+        let definitions = ai_tools::definitions(
+            settings.ai_server_info_enabled,
+            settings.ai_server_power_enabled,
+        );
+        let tools = ai_tools::openai_definitions(&definitions);
+        let mut messages = openai_messages(settings, history);
+        let mut input_tokens = None;
+        let mut output_tokens = None;
+        let mut tool_call_count = 0;
 
-        if !settings.ai_api_key.trim().is_empty() {
-            request = request.bearer_auth(settings.ai_api_key.as_str());
+        for round in 0..=MAX_TOOL_ROUNDS {
+            let mut payload = serde_json::json!({
+                "model": settings.ai_model.as_str(),
+                "messages": messages.clone(),
+                "max_tokens": 1024,
+            });
+            if !tools.is_empty() {
+                payload["tools"] = serde_json::json!(tools.clone());
+                payload["tool_choice"] = serde_json::json!("auto");
+            }
+
+            let mut request = state.client.post(&endpoint).json(&payload);
+            if !settings.ai_api_key.trim().is_empty() {
+                request = request.bearer_auth(settings.ai_api_key.as_str());
+            }
+            if settings.ai_provider.as_str() == "openrouter" {
+                request = request
+                    .header("HTTP-Referer", "https://calagopus.com")
+                    .header("X-Title", "Calagopus Chat");
+            }
+
+            let response = send_provider_request(request).await?;
+            let usage = response.get("usage");
+            accumulate_token_count(
+                &mut input_tokens,
+                reported_token_count(usage.and_then(|usage| usage.get("prompt_tokens"))),
+            );
+            accumulate_token_count(
+                &mut output_tokens,
+                reported_token_count(usage.and_then(|usage| usage.get("completion_tokens"))),
+            );
+
+            let message = response
+                .pointer("/choices/0/message")
+                .ok_or_else(|| anyhow::anyhow!("AI provider returned no chat-completion message"))?;
+            let tool_calls = message
+                .get("tool_calls")
+                .and_then(serde_json::Value::as_array)
+                .filter(|calls| !calls.is_empty());
+
+            let Some(tool_calls) = tool_calls else {
+                let content = message
+                    .get("content")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| anyhow::anyhow!("AI provider returned no chat-completion text"))?;
+                return Ok(AiReply {
+                    content: content.to_string(),
+                    input_tokens,
+                    output_tokens,
+                    pending_action: None,
+                });
+            };
+
+            if round == MAX_TOOL_ROUNDS {
+                return Err(anyhow::anyhow!("The AI exceeded the server tool-call limit."));
+            }
+
+            messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": tool_calls,
+            }));
+
+            for tool_call in tool_calls {
+                if tool_call_count >= MAX_TOOL_CALLS_PER_TURN {
+                    return Err(anyhow::anyhow!("The AI exceeded the server tool-call limit."));
+                }
+                tool_call_count += 1;
+
+                let call_id = tool_call
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let function = tool_call.get("function");
+                let name = function
+                    .and_then(|function| function.get("name"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let arguments = function
+                    .and_then(|function| function.get("arguments"))
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|arguments| serde_json::from_str(arguments).ok())
+                    .unwrap_or(serde_json::Value::Null);
+
+                let result = match ai_tools::execute(tool_context, name, &arguments).await {
+                    Ok(ai_tools::ToolExecution::Result(result)) => result,
+                    Ok(ai_tools::ToolExecution::Pending(action)) => {
+                        return Ok(pending_action_reply(action, input_tokens, output_tokens));
+                    }
+                    Err(error) => serde_json::json!({ "error": error.to_string() }),
+                };
+
+                messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": result.to_string(),
+                }));
+            }
         }
-        if settings.ai_provider.as_str() == "openrouter" {
-            request = request
-                .header("HTTP-Referer", "https://calagopus.com")
-                .header("X-Title", "Calagopus Chat");
-        }
 
-        let response = send_provider_request(request).await?;
-        let content = response
-            .pointer("/choices/0/message/content")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| anyhow::anyhow!("AI provider returned no chat-completion text"))?;
-        let usage = response.get("usage");
-
-        Ok(AiReply {
-            content: content.to_string(),
-            input_tokens: reported_token_count(usage.and_then(|usage| usage.get("prompt_tokens"))),
-            output_tokens: reported_token_count(
-                usage.and_then(|usage| usage.get("completion_tokens")),
-            ),
-        })
+        Err(anyhow::anyhow!("The AI could not finish the server tool request."))
     }
 
     async fn generate_anthropic_reply(
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
-        let messages = history
+        let mut messages = history
             .iter()
             .map(|(sender_kind, content)| {
                 serde_json::json!({
@@ -384,46 +610,132 @@ mod post {
             })
             .collect::<Vec<_>>();
         let endpoint = format!("{}/v1/messages", settings.ai_base_url.trim_end_matches('/'));
-        let response = send_provider_request(
-            state
-                .client
-                .post(endpoint)
-                .header("x-api-key", settings.ai_api_key.as_str())
-                .header("anthropic-version", "2023-06-01")
-                .json(&serde_json::json!({
+        let definitions = ai_tools::definitions(
+            settings.ai_server_info_enabled,
+            settings.ai_server_power_enabled,
+        );
+        let tools = ai_tools::anthropic_definitions(&definitions);
+        let system_prompt = server_tool_system_prompt(settings);
+        let mut input_tokens = None;
+        let mut output_tokens = None;
+        let mut tool_call_count = 0;
+
+        for round in 0..=MAX_TOOL_ROUNDS {
+            let mut payload = serde_json::json!({
                     "model": settings.ai_model.as_str(),
                     "max_tokens": 1024,
-                    "system": settings.ai_system_prompt.as_str(),
-                    "messages": messages,
-                })),
-        )
-        .await?;
+                    "system": system_prompt.as_str(),
+                    "messages": messages.clone(),
+                });
+            if !tools.is_empty() {
+                payload["tools"] = serde_json::json!(tools.clone());
+            }
 
-        let blocks = response
-            .get("content")
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| anyhow::anyhow!("Anthropic returned no message content"))?;
-        let answer = blocks
-            .iter()
-            .filter(|block| block.get("type").and_then(serde_json::Value::as_str) == Some("text"))
-            .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
-            .collect::<Vec<_>>()
-            .join("");
-        let usage = response.get("usage");
+            let response = send_provider_request(
+                state
+                    .client
+                    .post(&endpoint)
+                    .header("x-api-key", settings.ai_api_key.as_str())
+                    .header("anthropic-version", "2023-06-01")
+                    .json(&payload),
+            )
+            .await?;
+            let usage = response.get("usage");
+            accumulate_token_count(
+                &mut input_tokens,
+                reported_token_count(usage.and_then(|usage| usage.get("input_tokens"))),
+            );
+            accumulate_token_count(
+                &mut output_tokens,
+                reported_token_count(usage.and_then(|usage| usage.get("output_tokens"))),
+            );
 
-        Ok(AiReply {
-            content: answer,
-            input_tokens: reported_token_count(usage.and_then(|usage| usage.get("input_tokens"))),
-            output_tokens: reported_token_count(usage.and_then(|usage| usage.get("output_tokens"))),
-        })
+            let blocks = response
+                .get("content")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| anyhow::anyhow!("Anthropic returned no message content"))?;
+            let tool_uses = blocks
+                .iter()
+                .filter(|block| {
+                    block.get("type").and_then(serde_json::Value::as_str) == Some("tool_use")
+                })
+                .collect::<Vec<_>>();
+
+            if tool_uses.is_empty() {
+                let content = blocks
+                    .iter()
+                    .filter(|block| {
+                        block.get("type").and_then(serde_json::Value::as_str) == Some("text")
+                    })
+                    .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("");
+
+                return Ok(AiReply {
+                    content,
+                    input_tokens,
+                    output_tokens,
+                    pending_action: None,
+                });
+            }
+
+            if round == MAX_TOOL_ROUNDS {
+                return Err(anyhow::anyhow!("The AI exceeded the server tool-call limit."));
+            }
+
+            messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": blocks.clone(),
+            }));
+            let mut tool_results = Vec::with_capacity(tool_uses.len());
+            for tool_use in tool_uses {
+                if tool_call_count >= MAX_TOOL_CALLS_PER_TURN {
+                    return Err(anyhow::anyhow!("The AI exceeded the server tool-call limit."));
+                }
+                tool_call_count += 1;
+
+                let name = tool_use
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let id = tool_use
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let arguments = tool_use
+                    .get("input")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+
+                let result = match ai_tools::execute(tool_context, name, &arguments).await {
+                    Ok(ai_tools::ToolExecution::Result(result)) => result,
+                    Ok(ai_tools::ToolExecution::Pending(action)) => {
+                        return Ok(pending_action_reply(action, input_tokens, output_tokens));
+                    }
+                    Err(error) => serde_json::json!({ "error": error.to_string() }),
+                };
+                tool_results.push(serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": id,
+                    "content": result.to_string(),
+                }));
+            }
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": tool_results,
+            }));
+        }
+
+        Err(anyhow::anyhow!("The AI could not finish the server tool request."))
     }
 
     async fn generate_gemini_reply(
         state: &shared::State,
         settings: &crate::settings::ExtensionSettingsData,
         history: &[(String, String)],
+        tool_context: &ai_tools::ToolContext<'_>,
     ) -> Result<AiReply, anyhow::Error> {
-        let contents = history
+        let mut contents = history
             .iter()
             .map(|(sender_kind, content)| {
                 serde_json::json!({
@@ -437,39 +749,118 @@ mod post {
             "{}/models/{model}:generateContent",
             settings.ai_base_url.trim_end_matches('/')
         );
-        let response = send_provider_request(
-            state
-                .client
-                .post(endpoint)
-                .header("x-goog-api-key", settings.ai_api_key.as_str())
-                .json(&serde_json::json!({
-                    "systemInstruction": {
-                        "parts": [{ "text": settings.ai_system_prompt.as_str() }]
-                    },
-                    "contents": contents,
-                    "generationConfig": { "maxOutputTokens": 1024 },
-                })),
-        )
-        .await?;
+        let definitions = ai_tools::definitions(
+            settings.ai_server_info_enabled,
+            settings.ai_server_power_enabled,
+        );
+        let tools = ai_tools::gemini_definitions(&definitions);
+        let system_prompt = server_tool_system_prompt(settings);
+        let mut input_tokens = None;
+        let mut output_tokens = None;
+        let mut tool_call_count = 0;
 
-        let parts = response
-            .pointer("/candidates/0/content/parts")
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| anyhow::anyhow!("Google Gemini returned no candidate text"))?;
-        let answer = parts
-            .iter()
-            .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
-            .collect::<Vec<_>>()
-            .join("");
-        let usage = response.get("usageMetadata");
+        for round in 0..=MAX_TOOL_ROUNDS {
+            let mut payload = serde_json::json!({
+                "systemInstruction": {
+                    "parts": [{ "text": system_prompt.as_str() }]
+                },
+                "contents": contents.clone(),
+                "generationConfig": { "maxOutputTokens": 1024 },
+            });
+            if !definitions.is_empty() {
+                payload["tools"] = serde_json::json!(tools.clone());
+            }
 
-        Ok(AiReply {
-            content: answer,
-            input_tokens: reported_token_count(usage.and_then(|usage| usage.get("promptTokenCount"))),
-            output_tokens: reported_token_count(
-                usage.and_then(|usage| usage.get("candidatesTokenCount")),
-            ),
-        })
+            let response = send_provider_request(
+                state
+                    .client
+                    .post(&endpoint)
+                    .header("x-goog-api-key", settings.ai_api_key.as_str())
+                    .json(&payload),
+            )
+            .await?;
+            let usage = response.get("usageMetadata");
+            accumulate_token_count(
+                &mut input_tokens,
+                reported_token_count(usage.and_then(|usage| usage.get("promptTokenCount"))),
+            );
+            accumulate_token_count(
+                &mut output_tokens,
+                reported_token_count(usage.and_then(|usage| usage.get("candidatesTokenCount"))),
+            );
+
+            let candidate = response
+                .pointer("/candidates/0")
+                .ok_or_else(|| anyhow::anyhow!("Google Gemini returned no candidate"))?;
+            let content = candidate
+                .get("content")
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("Google Gemini returned no candidate content"))?;
+            let parts = content
+                .get("parts")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| anyhow::anyhow!("Google Gemini returned no candidate parts"))?;
+            let function_calls = parts
+                .iter()
+                .filter_map(|part| part.get("functionCall").cloned())
+                .collect::<Vec<_>>();
+
+            if function_calls.is_empty() {
+                let answer = parts
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("");
+                return Ok(AiReply {
+                    content: answer,
+                    input_tokens,
+                    output_tokens,
+                    pending_action: None,
+                });
+            }
+
+            if round == MAX_TOOL_ROUNDS {
+                return Err(anyhow::anyhow!("The AI exceeded the server tool-call limit."));
+            }
+
+            contents.push(content);
+            let mut function_responses = Vec::with_capacity(function_calls.len());
+            for function_call in function_calls {
+                if tool_call_count >= MAX_TOOL_CALLS_PER_TURN {
+                    return Err(anyhow::anyhow!("The AI exceeded the server tool-call limit."));
+                }
+                tool_call_count += 1;
+
+                let name = function_call
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let arguments = function_call
+                    .get("args")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+
+                let result = match ai_tools::execute(tool_context, name, &arguments).await {
+                    Ok(ai_tools::ToolExecution::Result(result)) => result,
+                    Ok(ai_tools::ToolExecution::Pending(action)) => {
+                        return Ok(pending_action_reply(action, input_tokens, output_tokens));
+                    }
+                    Err(error) => serde_json::json!({ "error": error.to_string() }),
+                };
+                function_responses.push(serde_json::json!({
+                    "functionResponse": {
+                        "name": name,
+                        "response": result,
+                    }
+                }));
+            }
+            contents.push(serde_json::json!({
+                "role": "user",
+                "parts": function_responses,
+            }));
+        }
+
+        Err(anyhow::anyhow!("The AI could not finish the server tool request."))
     }
 }
 

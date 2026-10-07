@@ -40,6 +40,7 @@ mod get {
                 conversations.created_at,
                 latest.content AS last_message,
                 latest.created_at AS last_message_at,
+                latest.ai_action_status AS last_action_status,
                 (
                     SELECT COUNT(*)
                     FROM com_calagopus_chat_messages AS unread
@@ -65,7 +66,14 @@ mod get {
               ON current_member.conversation_uuid = conversations.uuid
              AND current_member.user_uuid = $1
             LEFT JOIN LATERAL (
-                SELECT messages.content, messages.created_at
+                SELECT
+                    messages.content,
+                    messages.created_at,
+                    CASE
+                        WHEN messages.ai_action_status = 'pending'
+                          AND messages.ai_action_expires_at <= now() THEN 'expired'
+                        ELSE messages.ai_action_status
+                    END AS ai_action_status
                 FROM com_calagopus_chat_messages AS messages
                 WHERE messages.conversation_uuid = conversations.uuid
                 ORDER BY messages.created_at DESC, messages.uuid DESC
@@ -91,6 +99,7 @@ mod get {
                 created_at: row.try_get("created_at")?,
                 last_message: row.try_get("last_message")?,
                 last_message_at: row.try_get("last_message_at")?,
+                last_action_status: row.try_get("last_action_status")?,
                 unread_count: row.try_get("unread_count")?,
                 participants: row.try_get("participants")?,
             });
