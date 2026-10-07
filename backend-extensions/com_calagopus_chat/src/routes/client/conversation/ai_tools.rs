@@ -7,7 +7,7 @@ use shared::models::{
     server::Server,
     user::{AuthMethod, PermissionManager, User},
 };
-use std::{net::IpAddr, str::FromStr};
+use std::net::IpAddr;
 
 #[derive(Clone)]
 pub(super) struct ToolDefinition {
