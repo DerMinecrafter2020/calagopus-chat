@@ -20,6 +20,8 @@ import {
   Loader,
   Modal,
   Paper,
+  Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -38,12 +40,21 @@ import { useTranslations } from '@/providers/TranslationProvider.tsx';
 import createConversation from './api/createConversation.ts';
 import decideAiServerAction from './api/decideAiServerAction.ts';
 import deleteConversationApi from './api/deleteConversation.ts';
+import getChatServerResources from './api/getChatServerResources.ts';
+import getChatServers from './api/getChatServers.ts';
 import getConversations from './api/getConversations.ts';
 import getMessages from './api/getMessages.ts';
 import getUsers from './api/getUsers.ts';
 import markConversationRead from './api/markConversationRead.ts';
 import postMessage from './api/sendMessage.ts';
-import type { ChatMessage, ChatUser, Conversation, ConversationKind } from './lib/schemas.ts';
+import type {
+  ChatMessage,
+  ChatServerOption,
+  ChatServerResources,
+  ChatUser,
+  Conversation,
+  ConversationKind,
+} from './lib/schemas.ts';
 import { useExtTranslations } from './translations.ts';
 
 function conversationIcon(kind: ConversationKind, aiEnabled = false) {
@@ -56,12 +67,40 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** unitIndex).toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts = [
+    days > 0 ? `${days}d` : '',
+    hours > 0 ? `${hours}h` : '',
+    minutes > 0 ? `${minutes}m` : '',
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' ') : `${Math.floor(seconds)}s`;
+}
+
 function explicitlyMentionsAi(content: string): boolean {
   return content.split(/\s+/).some((word) => word.replace(/^[^\w@]+|[^\w@]+$/g, '').toLowerCase() === '@ai');
 }
 
 type ChatWidgetMode = 'widget' | 'page';
 type ChatWidgetSize = { width: number; height: number };
+type ChatServerStatusResult = {
+  conversationUuid: string;
+  server: ChatServerOption;
+  resources: ChatServerResources;
+};
+type ChatServerResourcesError =
+  | { kind: 'unavailable' }
+  | { kind: 'request'; message: string };
 type ChatWidgetResizeOrigin = ChatWidgetSize & {
   pointerId: number;
   pointerX: number;
@@ -91,6 +130,17 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [aiReplyPendingConversationUuid, setAiReplyPendingConversationUuid] = useState<string | null>(null);
+  const [serverStatusModalOpen, setServerStatusModalOpen] = useState(false);
+  const [serverSearch, setServerSearch] = useState('');
+  const [chatServers, setChatServers] = useState<ChatServerOption[]>([]);
+  const [chatServersLoading, setChatServersLoading] = useState(false);
+  const [chatServersTruncated, setChatServersTruncated] = useState(false);
+  const [chatServersError, setChatServersError] = useState<string | null>(null);
+  const [selectedServerUuid, setSelectedServerUuid] = useState<string | null>(null);
+  const [serverResourcesLoading, setServerResourcesLoading] = useState(false);
+  const [serverResourcesError, setServerResourcesError] =
+    useState<ChatServerResourcesError | null>(null);
+  const [serverStatusResult, setServerStatusResult] = useState<ChatServerStatusResult | null>(null);
   const [composeMode, setComposeMode] = useState<ConversationKind | null>(null);
   const [search, setSearch] = useState('');
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -185,6 +235,9 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
   const activeConversation = conversations.find(
     (conversation) => conversation.uuid === activeConversationUuid,
   );
+  const selectedChatServer = chatServers.find((server) => server.uuid === selectedServerUuid);
+  const activeServerStatusResult =
+    serverStatusResult?.conversationUuid === activeConversationUuid ? serverStatusResult : null;
   const getConversationTitle = (conversation: Conversation | undefined): string => {
     if (!conversation) return tExt('chat.conversation', {});
     if (conversation.kind === 'ai') return tExt('chat.aiTitle', {});
@@ -258,6 +311,71 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
   }, [expanded, user, addToast]);
 
   useEffect(() => {
+    if (!serverStatusModalOpen) return;
+
+    let active = true;
+    setChatServersLoading(true);
+    setChatServersError(null);
+    const timeout = window.setTimeout(() => {
+      getChatServers(serverSearch)
+        .then(({ servers: result, truncated }) => {
+          if (!active) return;
+          setChatServers(result);
+          setChatServersTruncated(truncated);
+        })
+        .catch((error) => {
+          if (active) setChatServersError(httpErrorToHuman(error));
+        })
+        .finally(() => {
+          if (active) setChatServersLoading(false);
+        });
+    }, serverSearch ? 250 : 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [serverStatusModalOpen, serverSearch]);
+
+  useEffect(() => {
+    if (!serverStatusModalOpen || !selectedServerUuid) {
+      setServerResourcesLoading(false);
+      setServerResourcesError(null);
+      return;
+    }
+
+    let active = true;
+    setServerResourcesLoading(true);
+    setServerResourcesError(null);
+    getChatServerResources(selectedServerUuid)
+      .then((resources) => {
+        if (!active) return;
+        if (!selectedChatServer || !activeConversationUuid) {
+          setServerResourcesError({ kind: 'unavailable' });
+          return;
+        }
+        setServerStatusResult({
+          conversationUuid: activeConversationUuid,
+          server: selectedChatServer,
+          resources,
+        });
+        setServerStatusModalOpen(false);
+      })
+      .catch((error) => {
+        if (active) {
+          setServerResourcesError({ kind: 'request', message: httpErrorToHuman(error) });
+        }
+      })
+      .finally(() => {
+        if (active) setServerResourcesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [serverStatusModalOpen, selectedServerUuid, selectedChatServer, activeConversationUuid]);
+
+  useEffect(() => {
     if (!expanded || !user || !activeConversationUuid) return;
 
     let active = true;
@@ -304,7 +422,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
 
     const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
     if (nearBottom) element.scrollTop = element.scrollHeight;
-  }, [messages, aiReplyPendingConversationUuid]);
+  }, [messages, aiReplyPendingConversationUuid, serverStatusResult, activeConversationUuid]);
 
   useEffect(() => {
     if (!expanded || !user || !composeMode || composeMode === 'ai') return;
@@ -354,11 +472,30 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     }
   };
 
+  const openServerStatus = (searchTerm = '') => {
+    setDraft('');
+    setServerSearch(searchTerm.trim().slice(0, 128));
+    setChatServers([]);
+    setChatServersTruncated(false);
+    setChatServersError(null);
+    setSelectedServerUuid(null);
+    setServerResourcesError(null);
+    setServerStatusResult(null);
+    setServerStatusModalOpen(true);
+  };
+
   const send = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const conversationUuid = activeConversationUuid;
     const content = draft.trim();
     if (!conversationUuid || !content || sending) return;
+    const statusCommand = content.match(/^\/status(?:\s+(.*))?$/i);
+    if (activeConversation?.kind === 'ai' && !aiAvailable && !statusCommand) return;
+    if (statusCommand) {
+      openServerStatus(statusCommand[1] ?? '');
+      return;
+    }
+
     const aiWillRespond =
       activeConversation?.kind === 'ai' ||
       (activeConversation?.kind === 'group' &&
@@ -391,6 +528,12 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
       setSending(false);
     }
   };
+
+  const slashCommandToken = draft.trimStart().split(/\s+/, 1)[0].toLowerCase();
+  const showStatusCommandSuggestion =
+    slashCommandToken.startsWith('/') && '/status'.startsWith(slashCommandToken);
+  const statusCommandSearch = draft.trim().match(/^\/status(?:\s+(.*))?$/i)?.[1] ?? '';
+  const isStatusCommandDraft = /^\/status(?:\s+.*)?$/i.test(draft.trim());
 
   const openNewChat = () => {
     setActiveConversationUuid(null);
@@ -629,7 +772,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                   <div className='calagopus-chat-centered-state'>
                     <Loader size='sm' />
                   </div>
-                ) : messages.length === 0 ? (
+                ) : messages.length === 0 && !activeServerStatusResult ? (
                   <div className='calagopus-chat-centered-state'>
                     <Text size='sm' c='dimmed'>{tExt('chat.noMessages', {})}</Text>
                   </div>
@@ -674,8 +817,80 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                     )}
                   </Stack>
                 )}
+                {activeServerStatusResult && (
+                  <div className='calagopus-chat-message is-ai calagopus-chat-server-status-message'>
+                    <Text className='calagopus-chat-message-author' size='xs' c='dimmed'>
+                      {tExt('chat.serverStatusResultAuthor', {})}
+                    </Text>
+                    <Paper withBorder radius='md' p='sm' className='calagopus-chat-message-paper'>
+                      <Group justify='space-between' align='flex-start'>
+                        <div>
+                          <Text fw={700}>{activeServerStatusResult.server.name}</Text>
+                          <Text size='xs' c='dimmed'>{activeServerStatusResult.server.uuidShort}</Text>
+                        </div>
+                        <Group gap='xs'>
+                          {activeServerStatusResult.server.isSuspended && (
+                            <Badge color='red'>{tExt('chat.statusSuspended', {})}</Badge>
+                          )}
+                          <Badge
+                            color={activeServerStatusResult.resources.state === 'running' ? 'green' : 'gray'}
+                          >
+                            {activeServerStatusResult.resources.state}
+                          </Badge>
+                        </Group>
+                      </Group>
+                      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing='xs' mt='sm'>
+                        <div>
+                          <Text size='xs' c='dimmed'>{tExt('chat.statusCpu', {})}</Text>
+                          <Text size='sm'>
+                            {activeServerStatusResult.resources.cpuAbsolute.toFixed(1)}% /{' '}
+                            {activeServerStatusResult.resources.cpuLimitAbsolute}%
+                          </Text>
+                        </div>
+                        <div>
+                          <Text size='xs' c='dimmed'>{tExt('chat.statusMemory', {})}</Text>
+                          <Text size='sm'>
+                            {formatBytes(activeServerStatusResult.resources.memoryBytes)} /{' '}
+                            {formatBytes(activeServerStatusResult.resources.memoryLimitBytes)}
+                          </Text>
+                        </div>
+                        <div>
+                          <Text size='xs' c='dimmed'>{tExt('chat.statusDisk', {})}</Text>
+                          <Text size='sm'>{formatBytes(activeServerStatusResult.resources.diskBytes)}</Text>
+                        </div>
+                        <div>
+                          <Text size='xs' c='dimmed'>{tExt('chat.statusUptime', {})}</Text>
+                          <Text size='sm'>{formatUptime(activeServerStatusResult.resources.uptime)}</Text>
+                        </div>
+                        {activeServerStatusResult.server.status && (
+                          <div>
+                            <Text size='xs' c='dimmed'>{tExt('chat.statusInstall', {})}</Text>
+                            <Text size='sm'>{activeServerStatusResult.server.status}</Text>
+                          </div>
+                        )}
+                      </SimpleGrid>
+                      <Group justify='flex-end' mt='xs'>
+                        <Button size='xs' variant='subtle' onClick={() => setServerStatusResult(null)}>
+                          {tExt('chat.dismissStatusResult', {})}
+                        </Button>
+                      </Group>
+                    </Paper>
+                  </div>
+                )}
               </div>
               <form className='calagopus-chat-composer' onSubmit={send}>
+                {showStatusCommandSuggestion && (
+                  <Paper withBorder radius='sm' p={4} className='calagopus-chat-slash-suggestion'>
+                    <button
+                      type='button'
+                      className='calagopus-chat-slash-command'
+                      onClick={() => openServerStatus(statusCommandSearch)}
+                    >
+                      <Text size='sm' fw={600}>/status</Text>
+                      <Text size='xs' c='dimmed'>{tExt('chat.statusCommandDescription', {})}</Text>
+                    </button>
+                  </Paper>
+                )}
                 <Group className='calagopus-chat-composer-options' justify='space-between' gap='xs'>
                   <Switch
                     size='xs'
@@ -709,7 +924,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                     maxRows={4}
                     autosize
                     maxLength={4000}
-                    disabled={sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
+                    disabled={sending}
                   />
                   <Tooltip
                     label={
@@ -723,7 +938,11 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                       size='lg'
                       variant='filled'
                       aria-label={tPanel('common.button.send', {})}
-                      disabled={!draft.trim() || sending || (activeConversation?.kind === 'ai' && !aiAvailable)}
+                      disabled={
+                        !draft.trim() ||
+                        sending ||
+                        (activeConversation?.kind === 'ai' && !aiAvailable && !isStatusCommandDraft)
+                      }
                       loading={sending}
                     >
                       <FontAwesomeIcon icon={faPaperPlane} aria-hidden='true' />
@@ -985,6 +1204,71 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
               {tExt('chat.deleteConversation', {})}
             </Button>
           </Group>
+        </Stack>
+      </Modal>
+      <Modal
+        opened={serverStatusModalOpen}
+        onClose={() => {
+          setServerStatusModalOpen(false);
+          setSelectedServerUuid(null);
+        }}
+        title={tExt('chat.statusCommand', {})}
+        centered
+        size='md'
+      >
+        <Stack gap='md'>
+          <Text size='sm' c='dimmed'>
+            {tExt('chat.statusCommandDescription', {})}
+          </Text>
+          <TextInput
+            label={tExt('chat.statusServerSearch', {})}
+            placeholder={tExt('chat.statusServerSearchPlaceholder', {})}
+            value={serverSearch}
+            onChange={(event) => {
+              setServerSearch(event.currentTarget.value);
+              setChatServers([]);
+              setChatServersTruncated(false);
+              setSelectedServerUuid(null);
+              setServerResourcesError(null);
+            }}
+            maxLength={128}
+          />
+          <Select
+            label={tExt('chat.statusServerSelect', {})}
+            placeholder={tExt('chat.statusServerSelectPlaceholder', {})}
+            data={chatServers.map((server) => ({
+              value: server.uuid,
+              label: `${server.name} (${server.uuidShort})`,
+            }))}
+            value={selectedServerUuid}
+            onChange={setSelectedServerUuid}
+            clearable
+            disabled={chatServersLoading && chatServers.length === 0}
+            nothingFoundMessage={tExt('chat.statusNoServersFound', {})}
+          />
+          {chatServersLoading && (
+            <Group gap='xs'>
+              <Loader size='xs' />
+              <Text size='xs' c='dimmed'>{tExt('chat.statusLoadingServers', {})}</Text>
+            </Group>
+          )}
+          {chatServersTruncated && (
+            <Text size='xs' c='dimmed'>{tExt('chat.statusServerListLimited', {})}</Text>
+          )}
+          {chatServersError && <Text size='sm' c='red'>{chatServersError}</Text>}
+          {serverResourcesLoading && (
+            <Group gap='xs'>
+              <Loader size='xs' />
+              <Text size='xs' c='dimmed'>{tExt('chat.statusLoadingDetails', {})}</Text>
+            </Group>
+          )}
+          {serverResourcesError && (
+            <Text size='sm' c='red'>
+              {serverResourcesError.kind === 'unavailable'
+                ? tExt('chat.statusSelectedServerUnavailable', {})
+                : serverResourcesError.message}
+            </Text>
+          )}
         </Stack>
       </Modal>
     </aside>

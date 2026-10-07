@@ -8,6 +8,7 @@ A native Calagopus Panel extension that adds an always-available, theme-aware ch
 - A standalone Chat page in the Panel account sidebar; administrators choose either the floating widget or page-only mode.
 - Direct messages and named group chats between active panel users.
 - Optional AI-enabled group chats that answer only when a member explicitly mentions `@AI`.
+- A `/status` chat command with a searchable server picker that reads live status directly from the Panel without an AI-provider call.
 - An animated typing indicator while AI responses are being prepared.
 - Remove a conversation from your own chat list without deleting it for other participants.
 - Conversation history and unread message counts persisted in PostgreSQL.

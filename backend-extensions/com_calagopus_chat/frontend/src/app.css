@@ -286,6 +286,10 @@
   align-items: flex-end;
 }
 
+.calagopus-chat-server-status-message {
+  margin-top: 8px;
+}
+
 .calagopus-chat-message-paper {
   max-width: 100%;
   background: var(--mantine-color-default);
@@ -390,6 +394,29 @@
   gap: 7px;
   padding: 10px;
   border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.calagopus-chat-slash-suggestion {
+  padding: 0;
+}
+
+.calagopus-chat-slash-command {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  color: var(--mantine-color-text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--mantine-radius-sm);
+  cursor: pointer;
+}
+
+.calagopus-chat-slash-command:hover,
+.calagopus-chat-slash-command:focus-visible {
+  background: var(--mantine-color-default-hover);
 }
 
 .calagopus-chat-composer-options {

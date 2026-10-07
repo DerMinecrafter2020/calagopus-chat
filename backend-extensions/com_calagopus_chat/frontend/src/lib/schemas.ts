@@ -7,6 +7,24 @@ export const userSummarySchema = z.object({
   username: z.string(),
 });
 
+export const chatServerOptionSchema = z.object({
+  uuid: z.string().uuid(),
+  uuidShort: z.string(),
+  name: z.string(),
+  status: z.string().nullable().optional(),
+  isSuspended: z.boolean(),
+});
+
+export const chatServerResourcesSchema = z.object({
+  state: z.string(),
+  cpuAbsolute: z.number(),
+  cpuLimitAbsolute: z.number(),
+  memoryBytes: z.number(),
+  memoryLimitBytes: z.number(),
+  diskBytes: z.number(),
+  uptime: z.number(),
+});
+
 export const conversationSchema = z.object({
   uuid: z.string().uuid(),
   kind: conversationKindSchema,
@@ -147,6 +165,8 @@ export const updateAdminSettingsSchema = z.object({
 
 export type Conversation = z.infer<typeof conversationSchema>;
 export type ConversationKind = z.infer<typeof conversationKindSchema>;
+export type ChatServerOption = z.infer<typeof chatServerOptionSchema>;
+export type ChatServerResources = z.infer<typeof chatServerResourcesSchema>;
 export type AiProvider = z.infer<typeof aiProviderSchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type AiServerAction = z.infer<typeof aiServerActionSchema>;
