@@ -1,5 +1,9 @@
 # Calagopus Chat changelog
 
+## 0.2.2 — 2026-10-07
+- Added a first-use AI chat guide covering privacy, server-data handling, confirmations, and chat commands.
+- Improved reopening a direct chat with the same person so the existing thread opens immediately.
+
 ## 0.2.1 — 2026-10-07
 - Added a `/status` chat command with a searchable server picker and a direct live status/resource view, without an AI-provider call.
 

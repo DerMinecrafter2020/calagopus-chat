@@ -17,6 +17,7 @@ import {
   Button,
   Checkbox,
   Group,
+  List,
   Loader,
   Modal,
   Paper,
@@ -33,7 +34,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { z } from 'zod';
 import { httpErrorToHuman } from '@/api/axios.ts';
-import { useUserSetting } from '@/lib/userSettings.ts';
+import { useUserSetting, useUserSettingsLoaded } from '@/lib/userSettings.ts';
 import { useAuth } from '@/providers/AuthProvider.tsx';
 import { useToast } from '@/providers/ToastProvider.tsx';
 import { useTranslations } from '@/providers/TranslationProvider.tsx';
@@ -118,6 +119,13 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     z.boolean(),
     true,
   );
+  const [hasSeenAiOnboarding, setHasSeenAiOnboarding] = useUserSetting(
+    'com.calagopus.chat::ai_onboarding_seen',
+    z.boolean(),
+    false,
+  );
+  const userSettingsLoaded = useUserSettingsLoaded();
+  const [aiOnboardingOpen, setAiOnboardingOpen] = useState(false);
   const [expanded, setExpanded] = useState(isPage);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [aiAvailable, setAiAvailable] = useState(false);
@@ -235,6 +243,9 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
   const activeConversation = conversations.find(
     (conversation) => conversation.uuid === activeConversationUuid,
   );
+  const isAiConversation =
+    activeConversation?.kind === 'ai' ||
+    (activeConversation?.kind === 'group' && activeConversation.aiEnabled);
   const selectedChatServer = chatServers.find((server) => server.uuid === selectedServerUuid);
   const activeServerStatusResult =
     serverStatusResult?.conversationUuid === activeConversationUuid ? serverStatusResult : null;
@@ -309,6 +320,16 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
       window.clearInterval(interval);
     };
   }, [expanded, user, addToast]);
+
+  useEffect(() => {
+    if (!expanded || !isAiConversation) {
+      setAiOnboardingOpen(false);
+      return;
+    }
+
+    if (!user || !userSettingsLoaded || !aiAvailable || hasSeenAiOnboarding) return;
+    setAiOnboardingOpen(true);
+  }, [expanded, isAiConversation, user, userSettingsLoaded, aiAvailable, hasSeenAiOnboarding]);
 
   useEffect(() => {
     if (!serverStatusModalOpen) return;
@@ -457,7 +478,6 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     setCreating(true);
     try {
       const response = await createConversation({ kind, participantUuids, title, aiEnabled });
-      await loadConversations(true);
       setMessages([]);
       setActiveConversationUuid(response.conversation.uuid);
       setComposeMode(null);
@@ -465,6 +485,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
       setGroupTitle('');
       setGroupAiEnabled(false);
       setSearch('');
+      void loadConversations(true);
     } catch (error) {
       addToast(httpErrorToHuman(error), 'error');
     } finally {
@@ -482,6 +503,11 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
     setServerResourcesError(null);
     setServerStatusResult(null);
     setServerStatusModalOpen(true);
+  };
+
+  const completeAiOnboarding = () => {
+    setAiOnboardingOpen(false);
+    setHasSeenAiOnboarding(true);
   };
 
   const send = async (event: FormEvent<HTMLFormElement>) => {
@@ -1066,6 +1092,7 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
                             user={chatUser}
                             selected={selectedUsers.includes(chatUser.uuid)}
                             groupMode={composeMode === 'group'}
+                            disabled={creating}
                             onSelect={() => {
                               if (composeMode === 'direct') {
                                 void startConversation('direct', [chatUser.uuid]);
@@ -1202,6 +1229,45 @@ export default function ChatWidget({ mode = 'widget' }: { mode?: ChatWidgetMode 
               onClick={() => void confirmDeleteChat()}
             >
               {tExt('chat.deleteConversation', {})}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+      <Modal
+        opened={aiOnboardingOpen}
+        onClose={completeAiOnboarding}
+        title={tExt('chat.aiOnboardingTitle', {})}
+        centered
+        size='lg'
+      >
+        <Stack gap='md'>
+          <Text size='sm' c='dimmed'>
+            {tExt('chat.aiOnboardingIntro', {})}
+          </Text>
+          <Paper withBorder radius='sm' p='sm'>
+            <Stack gap='xs'>
+              <Text fw={700}>{tExt('chat.aiOnboardingSafetyTitle', {})}</Text>
+              <List size='sm' spacing='xs'>
+                <List.Item>{tExt('chat.aiOnboardingSecrets', {})}</List.Item>
+                <List.Item>{tExt('chat.aiOnboardingKeys', {})}</List.Item>
+                <List.Item>{tExt('chat.aiOnboardingServerData', {})}</List.Item>
+              </List>
+            </Stack>
+          </Paper>
+          <Paper withBorder radius='sm' p='sm'>
+            <Stack gap='xs'>
+              <Text fw={700}>{tExt('chat.aiOnboardingUseTitle', {})}</Text>
+              <List size='sm' spacing='xs'>
+                <List.Item>{tExt('chat.aiOnboardingPrivateUse', {})}</List.Item>
+                <List.Item>{tExt('chat.aiOnboardingGroupUse', {})}</List.Item>
+                <List.Item>{tExt('chat.aiOnboardingStatusCommand', {})}</List.Item>
+                <List.Item>{tExt('chat.aiOnboardingVerify', {})}</List.Item>
+              </List>
+            </Stack>
+          </Paper>
+          <Group justify='flex-end'>
+            <Button onClick={completeAiOnboarding}>
+              {tExt('chat.aiOnboardingDone', {})}
             </Button>
           </Group>
         </Stack>
@@ -1390,15 +1456,17 @@ function UserOption({
   user,
   selected,
   groupMode,
+  disabled,
   onSelect,
 }: {
   user: ChatUser;
   selected: boolean;
   groupMode: boolean;
+  disabled: boolean;
   onSelect: () => void;
 }) {
   return (
-    <button type='button' className='calagopus-chat-user-row' onClick={onSelect}>
+    <button type='button' className='calagopus-chat-user-row' onClick={onSelect} disabled={disabled}>
       <span className='calagopus-chat-user-avatar'>{user.username.slice(0, 1).toUpperCase()}</span>
       <span className='calagopus-chat-user-name'>{user.username}</span>
       {groupMode && <Checkbox checked={selected} readOnly tabIndex={-1} aria-label={`Select ${user.username}`} />}
