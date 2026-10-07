@@ -1,9 +1,14 @@
 .calagopus-chat-widget {
+  --calagopus-visual-viewport-height: 100dvh;
+  --calagopus-visual-viewport-bottom-inset: 0px;
+
   position: fixed;
   right: 16px;
   bottom: 16px;
   right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(
+    max(16px, env(safe-area-inset-bottom)) + var(--calagopus-visual-viewport-bottom-inset)
+  );
   z-index: 150;
   color: var(--mantine-color-text);
   font-family: var(--mantine-font-family);
@@ -67,8 +72,17 @@
   display: flex;
   flex-direction: column;
   width: min(clamp(340px, 28vw, 460px), calc(100vw - 32px));
-  height: min(clamp(430px, 72dvh, 760px), calc(100dvh - 32px));
-  max-height: calc(100dvh - 32px);
+  height: min(
+    clamp(430px, 72dvh, 760px),
+    calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 32px
+    )
+  );
+  max-height: calc(
+    var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+      env(safe-area-inset-bottom) - 32px
+  );
   overflow: hidden;
   color: var(--mantine-color-text);
   background: var(--mantine-color-body);
@@ -98,6 +112,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 10px;
 }
 
@@ -202,6 +217,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 12px;
 }
 
@@ -278,6 +294,7 @@
   min-height: 80px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .calagopus-chat-user-avatar {
@@ -306,14 +323,26 @@
 @media (min-width: 1600px) {
   .calagopus-chat-shell {
     width: min(480px, calc(100vw - 48px));
-    height: min(820px, calc(100dvh - 48px));
+    height: min(
+      820px,
+      calc(
+        var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+          env(safe-area-inset-bottom) - 48px
+      )
+    );
   }
 }
 
 @media (max-height: 520px) and (min-width: 521px) {
   .calagopus-chat-shell {
-    height: calc(100dvh - 24px);
-    max-height: calc(100dvh - 24px);
+    height: calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 24px
+    );
+    max-height: calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 24px
+    );
   }
 }
 
@@ -322,17 +351,30 @@
     right: 8px;
     bottom: 8px;
     right: max(8px, env(safe-area-inset-right));
-    bottom: max(8px, env(safe-area-inset-bottom));
+    bottom: calc(
+      max(8px, env(safe-area-inset-bottom)) + var(--calagopus-visual-viewport-bottom-inset, 0px)
+    );
   }
 
   .calagopus-chat-collapsed {
-    width: min(280px, calc(100vw - 16px));
+    width: min(
+      280px,
+      calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px)
+    );
   }
 
   .calagopus-chat-shell {
-    width: calc(100vw - 16px);
-    height: min(760px, calc(100dvh - 16px));
-    max-height: calc(100dvh - 16px);
+    width: calc(
+      100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px
+    );
+    height: calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 16px
+    );
+    max-height: calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 16px
+    );
     border-radius: var(--mantine-radius-md);
   }
 
@@ -359,6 +401,86 @@
 
   .calagopus-chat-delete-action {
     opacity: 1;
+  }
+
+  .calagopus-chat-composer-options {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+}
+
+@media (pointer: coarse) {
+  .calagopus-chat-header .mantine-ActionIcon-root,
+  .calagopus-chat-composer-row .mantine-ActionIcon-root,
+  .calagopus-chat-delete-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .calagopus-chat-composer-options .mantine-Switch-root {
+    min-height: 44px;
+  }
+
+  .calagopus-chat-conversation-button,
+  .calagopus-chat-user-row {
+    min-height: 48px;
+  }
+
+  .calagopus-chat-compose .mantine-Button-root,
+  .calagopus-chat-settings .mantine-Button-root {
+    min-height: 44px;
+  }
+
+  .calagopus-chat-widget input,
+  .calagopus-chat-widget textarea,
+  .calagopus-chat-settings .mantine-Input-input {
+    font-size: 16px;
+  }
+
+  .calagopus-chat-settings .mantine-Input-input {
+    min-height: 44px;
+  }
+
+  .calagopus-chat-settings input,
+  .calagopus-chat-settings textarea {
+    font-size: 16px;
+  }
+
+  .calagopus-chat-widget button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@media (hover: none) and (max-height: 520px) and (min-width: 521px) {
+  .calagopus-chat-widget {
+    right: 8px;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(
+      max(8px, env(safe-area-inset-bottom)) + var(--calagopus-visual-viewport-bottom-inset, 0px)
+    );
+  }
+
+  .calagopus-chat-shell {
+    width: calc(
+      100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px
+    );
+    height: calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 16px
+    );
+    max-height: calc(
+      var(--calagopus-visual-viewport-height, 100dvh) - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom) - 16px
+    );
+    border-radius: var(--mantine-radius-md);
+  }
+
+  .calagopus-chat-widget input,
+  .calagopus-chat-widget textarea {
+    font-size: 16px;
   }
 }
 

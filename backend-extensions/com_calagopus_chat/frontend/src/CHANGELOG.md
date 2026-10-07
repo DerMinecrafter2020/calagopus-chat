@@ -1,5 +1,8 @@
 # Calagopus Chat changelog
 
+## 0.1.7 — 2026-10-07
+- Improved phone layouts with safe-area spacing, keyboard-aware chat sizing, and larger touch targets.
+
 ## 0.1.6 — 2026-10-06
 - Added a confirmed option to remove a direct, group, or AI conversation from your chat list without deleting it for other participants.
 

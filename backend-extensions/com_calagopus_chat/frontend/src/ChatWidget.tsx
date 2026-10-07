@@ -83,6 +83,36 @@ export default function ChatWidget() {
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deletingConversationUuid, setDeletingConversationUuid] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const widgetRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const updateViewport = () => {
+      const element = widgetRef.current;
+      if (!element) return;
+
+      const bottomInset = expanded
+        ? Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height)
+        : 0;
+      element.style.setProperty('--calagopus-visual-viewport-height', `${viewport.height}px`);
+      element.style.setProperty('--calagopus-visual-viewport-bottom-inset', `${bottomInset}px`);
+    };
+
+    updateViewport();
+    viewport.addEventListener('resize', updateViewport);
+    viewport.addEventListener('scroll', updateViewport);
+    window.addEventListener('resize', updateViewport);
+
+    return () => {
+      viewport.removeEventListener('resize', updateViewport);
+      viewport.removeEventListener('scroll', updateViewport);
+      window.removeEventListener('resize', updateViewport);
+      widgetRef.current?.style.removeProperty('--calagopus-visual-viewport-height');
+      widgetRef.current?.style.removeProperty('--calagopus-visual-viewport-bottom-inset');
+    };
+  }, [expanded]);
 
   const unreadCount = useMemo(
     () => conversations.reduce((total, conversation) => total + conversation.unreadCount, 0),
@@ -299,6 +329,7 @@ export default function ChatWidget() {
 
   return (
     <aside
+      ref={widgetRef}
       className={`calagopus-chat-widget${expanded ? ' is-expanded' : ''}`}
       aria-label={tExt('chat.brand', {})}
     >
@@ -451,6 +482,7 @@ export default function ChatWidget() {
                     placeholder={tExt('chat.messagePlaceholder', {})}
                     value={draft}
                     onChange={(event) => setDraft(event.currentTarget.value)}
+                    enterKeyHint={sendOnEnter ? 'send' : 'enter'}
                     onKeyDown={(event) => {
                       const sendShortcut = sendOnEnter
                         ? event.key === 'Enter' && !event.shiftKey
