@@ -1,9 +1,11 @@
 # Calagopus Chat changelog
 
+## 0.2.1 — 2026-10-07
+- Added a `/status` chat command with a searchable server picker and a direct live status/resource view, without an AI-provider call.
+
 ## 0.2.0 — 2026-10-07
 - Fixed internal Panel API requests by forwarding the connection and host metadata expected by the Panel router.
 - Added an animated three-dot typing indicator while the AI prepares a direct-chat or `@AI` group reply.
-- Added a `/status` chat command with a searchable server picker and a direct live status/resource view, without an AI-provider call.
 - Improved server-tool error details to identify the failing Panel route without exposing server UUIDs.
 
 ## 0.1.10 — 2026-10-07
