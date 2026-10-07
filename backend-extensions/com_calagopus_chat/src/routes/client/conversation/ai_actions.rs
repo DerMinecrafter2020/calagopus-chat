@@ -17,6 +17,7 @@ use super::ai_tools::{self, ToolContext};
 
 mod post {
     use super::*;
+    use shared::models::ByUuid;
 
     #[derive(ToSchema, Deserialize)]
     pub struct PayloadData {

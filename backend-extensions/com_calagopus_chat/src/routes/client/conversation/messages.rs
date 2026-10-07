@@ -139,6 +139,7 @@ mod get {
 
 mod post {
     use super::*;
+    use shared::models::ByUuid;
 
     #[derive(ToSchema, Deserialize)]
     pub struct PayloadData {
