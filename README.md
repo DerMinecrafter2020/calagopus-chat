@@ -42,16 +42,6 @@ cargo build --profile heavy-release
 
 The extension targets Calagopus Panel `>=1.2.3`. Its frontend uses the official global page slot, an admin sidebar route, frontend API helpers, and the extension card configuration page; the backend uses Rust routes, encrypted extension settings, permissions, and SQL migrations. The extension API and required dependencies are available in the official 1.2.3 release.
 
-## GitHub releases
-
-The GitHub Actions workflow in `.github/workflows/release.yml` automatically checks pushes to `main` or `master`. It creates a release only when the Cargo and frontend package versions match and the corresponding `vMAJOR.MINOR.PATCH` tag does not already exist. Before publishing, it builds the frontend first (the Panel's `shared` build script requires `frontend/dist`), then builds the Rust extension with the Panel's `heavy-release` profile against Panel `1.2.3` and `1.2.4` on isolated GitHub runners. Cargo and pnpm dependency caches speed up repeated preflight builds. It will not publish a release unless both preflight builds pass. The workflow packages the root `Metadata.toml`, `backend/`, `frontend/`, and `migrations/` entries in the archive layout Calagopus expects, then creates a GitHub Release with `com_calagopus_chat.c7s.zip`. The release description includes the matching version section from `frontend/src/CHANGELOG.md`, followed by GitHub's generated commit notes. You can also run it manually from the Actions tab: enter the version tag and select the branch to release. If the tag already exists, it uses the tagged commit; if it is new, it packages the selected branch and creates the tag with the release.
-
-To publish automatically, update both package versions to the same unused version, commit the change, and push it to `main` or `master`. The runner derives the matching version tag and creates the release after the preflight builds pass. Ordinary code pushes without a version bump do not create duplicate releases. Version rollover rules and the pre-release checklist are in [`agent.md`](agent.md).
-
-For the current `0.2.2` version, a push to the default branch will create `v0.2.2` if that tag is not already present. Pushing a `v*` tag manually and using **Actions → Release Calagopus Chat → Run workflow** are also supported.
-
-After the workflow succeeds, download the `.c7s.zip` file from the GitHub Release. Before tagging, run the [official pre-export checks](https://calagopus.com/docs/panel/extensions/getting-your-extension-ready) from a matching Panel checkout. For a manual package export, run `panel-rs extensions export com.calagopus.chat` from the Panel repository root; Calagopus writes the archive to `exported-extensions/com_calagopus_chat.c7s.zip`.
-
 ## Configure AI
 
 1. Install and enable **Calagopus Chat** in the Panel.
